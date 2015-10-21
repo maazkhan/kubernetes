@@ -68,8 +68,12 @@ dest-file
 disable-filter
 dockercfg-path
 docker-endpoint
+docker-email
 docker-exec-handler
+docker-password
 driver-port
+docker-server
+docker-username
 dry-run
 duration-sec
 e2e-output-dir
@@ -99,6 +103,8 @@ file-suffix
 forward-services
 framework-name
 framework-weburi
+from-file
+from-literal
 func-dest
 fuzz-iters
 gather-resource-usage

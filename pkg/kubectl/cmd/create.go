@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/kubectl"
+	cmdmacro "k8s.io/kubernetes/pkg/kubectl/cmd/macro"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 	"k8s.io/kubernetes/pkg/runtime"
@@ -56,6 +57,10 @@ func NewCmdCreate(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 		Long:    create_long,
 		Example: create_example,
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(options.Filenames) == 0 {
+				cmd.Help()
+				return
+			}
 			cmdutil.CheckErr(ValidateArgs(cmd, args))
 			cmdutil.CheckErr(cmdutil.ValidateOutputArgs(cmd))
 			cmdutil.CheckErr(RunCreate(f, cmd, out, options))
@@ -68,6 +73,10 @@ func NewCmdCreate(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 	cmdutil.AddValidateFlags(cmd)
 	cmdutil.AddOutputFlagsForMutation(cmd)
 	cmdutil.AddApplyAnnotationFlags(cmd)
+
+	// macro subcommands
+	cmd.AddCommand(cmdmacro.NewCmdCreateNamespace(f, out))
+	cmd.AddCommand(cmdmacro.NewCmdCreateSecret(f, out))
 	return cmd
 }
 

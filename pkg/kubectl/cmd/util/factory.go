@@ -116,6 +116,9 @@ func NewFactory(optionalClientConfig clientcmd.ClientConfig) *Factory {
 		"service/v1":                      kubectl.ServiceGeneratorV1{},
 		"service/v2":                      kubectl.ServiceGeneratorV2{},
 		"horizontalpodautoscaler/v1beta1": kubectl.HorizontalPodAutoscalerV1Beta1{},
+		"namespace/v1":                    kubectl.NamespaceGeneratorV1{},
+		"secret/v1":                       kubectl.SecretGeneratorV1{},
+		"secret-for-docker-registry/v1":   kubectl.SecretForDockerRegistryGeneratorV1{},
 	}
 
 	clientConfig := optionalClientConfig

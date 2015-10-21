@@ -344,10 +344,117 @@ _kubectl_describe()
     must_have_one_noun+=("serviceaccount")
 }
 
+_kubectl_create_namespace()
+{
+    last_command="kubectl_create_namespace"
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    flags+=("--generator=")
+    flags+=("--no-headers")
+    flags+=("--output=")
+    two_word_flags+=("-o")
+    flags+=("--output-version=")
+    flags+=("--show-all")
+    flags+=("-a")
+    flags+=("--sort-by=")
+    flags+=("--template=")
+    two_word_flags+=("-t")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+}
+
+_kubectl_create_secret_docker-registry()
+{
+    last_command="kubectl_create_secret_docker-registry"
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--docker-email=")
+    flags+=("--docker-password=")
+    flags+=("--docker-server=")
+    flags+=("--docker-username=")
+    flags+=("--dry-run")
+    flags+=("--generator=")
+    flags+=("--no-headers")
+    flags+=("--output=")
+    two_word_flags+=("-o")
+    flags+=("--output-version=")
+    flags+=("--show-all")
+    flags+=("-a")
+    flags+=("--sort-by=")
+    flags+=("--template=")
+    two_word_flags+=("-t")
+
+    must_have_one_flag=()
+    must_have_one_flag+=("--docker-email=")
+    must_have_one_flag+=("--docker-password=")
+    must_have_one_flag+=("--docker-username=")
+    must_have_one_noun=()
+}
+
+_kubectl_create_secret_opaque()
+{
+    last_command="kubectl_create_secret_opaque"
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    flags+=("--from-file=")
+    flags+=("--from-literal=")
+    flags+=("--generator=")
+    flags+=("--no-headers")
+    flags+=("--output=")
+    two_word_flags+=("-o")
+    flags+=("--output-version=")
+    flags+=("--show-all")
+    flags+=("-a")
+    flags+=("--sort-by=")
+    flags+=("--template=")
+    two_word_flags+=("-t")
+    flags+=("--type=")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+}
+
+_kubectl_create_secret()
+{
+    last_command="kubectl_create_secret"
+    commands=()
+    commands+=("docker-registry")
+    commands+=("opaque")
+
+    flags=()
+    two_word_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+}
+
 _kubectl_create()
 {
     last_command="kubectl_create"
     commands=()
+    commands+=("namespace")
+    commands+=("secret")
 
     flags=()
     two_word_flags=()
