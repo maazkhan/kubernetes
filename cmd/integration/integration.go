@@ -73,7 +73,8 @@ import (
 )
 
 var (
-	fakeDocker1, fakeDocker2 dockertools.FakeDockerClient
+	fakeDocker1 = dockertools.NewFakeDockerClient()
+	fakeDocker2 = dockertools.NewFakeDockerClient()
 	// Limit the number of concurrent tests.
 	maxConcurrency int
 
@@ -133,11 +134,11 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 		glog.Fatalf("Failed to connect to etcd")
 	}
 
-	cl := client.NewOrDie(&client.Config{Host: apiServer.URL, Version: testapi.Default.GroupAndVersion()})
+	cl := client.NewOrDie(&client.Config{Host: apiServer.URL, GroupVersion: testapi.Default.GroupVersion()})
 
 	// TODO: caesarxuchao: hacky way to specify version of Experimental client.
 	// We will fix this by supporting multiple group versions in Config
-	cl.ExtensionsClient = client.NewExtensionsOrDie(&client.Config{Host: apiServer.URL, Version: testapi.Extensions.GroupAndVersion()})
+	cl.ExtensionsClient = client.NewExtensionsOrDie(&client.Config{Host: apiServer.URL, GroupVersion: testapi.Extensions.GroupVersion()})
 
 	storageVersions := make(map[string]string)
 	etcdStorage, err := master.NewEtcdStorage(etcdClient, latest.GroupOrDie("").InterfacesFor, testapi.Default.GroupAndVersion(), etcdtest.PathPrefix())
@@ -169,6 +170,13 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 		glog.Fatalf("No public address for %s", host)
 	}
 
+	// The caller of master.New should guarantee pulicAddress is properly set
+	hostIP, err := util.ValidPublicAddrForMaster(publicAddress)
+	if err != nil {
+		glog.Fatalf("Unable to find suitable network address.error='%v' . "+
+			"Fail to get a valid public address for master.", err)
+	}
+
 	// Create a master and install handlers into mux.
 	m := master.New(&master.Config{
 		StorageDestinations:   storageDestinations,
@@ -181,7 +189,7 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 		Authorizer:            apiserver.NewAlwaysAllowAuthorizer(),
 		AdmissionControl:      admit.NewAlwaysAdmit(),
 		ReadWritePort:         portNumber,
-		PublicAddress:         publicAddress,
+		PublicAddress:         hostIP,
 		CacheTimeout:          2 * time.Second,
 		StorageVersions:       storageVersions,
 	})
@@ -220,7 +228,7 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 	cm := cm.NewStubContainerManager()
 	kcfg := kubeletapp.SimpleKubelet(
 		cl,
-		&fakeDocker1,
+		fakeDocker1,
 		"localhost",
 		testRootDir,
 		firstManifestURL,
@@ -252,7 +260,7 @@ func startComponents(firstManifestURL, secondManifestURL string) (string, string
 
 	kcfg = kubeletapp.SimpleKubelet(
 		cl,
-		&fakeDocker2,
+		fakeDocker2,
 		"127.0.0.1",
 		testRootDir,
 		secondManifestURL,
@@ -987,10 +995,10 @@ func main() {
 	// Wait for the synchronization threads to come up.
 	time.Sleep(time.Second * 10)
 
-	kubeClient := client.NewOrDie(&client.Config{Host: apiServerURL, Version: testapi.Default.GroupAndVersion()})
+	kubeClient := client.NewOrDie(&client.Config{Host: apiServerURL, GroupVersion: testapi.Default.GroupVersion()})
 	// TODO: caesarxuchao: hacky way to specify version of Experimental client.
 	// We will fix this by supporting multiple group versions in Config
-	kubeClient.ExtensionsClient = client.NewExtensionsOrDie(&client.Config{Host: apiServerURL, Version: testapi.Extensions.GroupAndVersion()})
+	kubeClient.ExtensionsClient = client.NewExtensionsOrDie(&client.Config{Host: apiServerURL, GroupVersion: testapi.Extensions.GroupVersion()})
 
 	// Run tests in parallel
 	testFuncs := []testFunc{

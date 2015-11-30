@@ -2575,18 +2575,18 @@ func TestUpdateNewNodeStatus(t *testing.T) {
 		Status: api.NodeStatus{
 			Conditions: []api.NodeCondition{
 				{
-					Type:               api.NodeReady,
-					Status:             api.ConditionTrue,
-					Reason:             "KubeletReady",
-					Message:            fmt.Sprintf("kubelet is posting ready status"),
-					LastHeartbeatTime:  unversioned.Time{},
-					LastTransitionTime: unversioned.Time{},
-				},
-				{
 					Type:               api.NodeOutOfDisk,
 					Status:             api.ConditionFalse,
 					Reason:             "KubeletHasSufficientDisk",
 					Message:            fmt.Sprintf("kubelet has sufficient disk space available"),
+					LastHeartbeatTime:  unversioned.Time{},
+					LastTransitionTime: unversioned.Time{},
+				},
+				{
+					Type:               api.NodeReady,
+					Status:             api.ConditionTrue,
+					Reason:             "KubeletReady",
+					Message:            fmt.Sprintf("kubelet is posting ready status"),
 					LastHeartbeatTime:  unversioned.Time{},
 					LastTransitionTime: unversioned.Time{},
 				},
@@ -2637,6 +2637,11 @@ func TestUpdateNewNodeStatus(t *testing.T) {
 		}
 		updatedNode.Status.Conditions[i].LastHeartbeatTime = unversioned.Time{}
 		updatedNode.Status.Conditions[i].LastTransitionTime = unversioned.Time{}
+	}
+
+	// Version skew workaround. See: https://github.com/kubernetes/kubernetes/issues/16961
+	if updatedNode.Status.Conditions[len(updatedNode.Status.Conditions)-1].Type != api.NodeReady {
+		t.Errorf("unexpected node condition order. NodeReady should be last.")
 	}
 
 	if !reflect.DeepEqual(expectedNode, updatedNode) {
@@ -2691,18 +2696,18 @@ func testDockerRuntimeVersion(t *testing.T) {
 		Status: api.NodeStatus{
 			Conditions: []api.NodeCondition{
 				{
-					Type:               api.NodeReady,
-					Status:             api.ConditionTrue,
-					Reason:             "KubeletReady",
-					Message:            fmt.Sprintf("kubelet is posting ready status"),
-					LastHeartbeatTime:  unversioned.Time{},
-					LastTransitionTime: unversioned.Time{},
-				},
-				{
 					Type:               api.NodeOutOfDisk,
 					Status:             api.ConditionFalse,
 					Reason:             "KubeletHasSufficientDisk",
 					Message:            fmt.Sprintf("kubelet has sufficient disk space available"),
+					LastHeartbeatTime:  unversioned.Time{},
+					LastTransitionTime: unversioned.Time{},
+				},
+				{
+					Type:               api.NodeReady,
+					Status:             api.ConditionTrue,
+					Reason:             "KubeletReady",
+					Message:            fmt.Sprintf("kubelet is posting ready status"),
 					LastHeartbeatTime:  unversioned.Time{},
 					LastTransitionTime: unversioned.Time{},
 				},
@@ -2754,6 +2759,12 @@ func testDockerRuntimeVersion(t *testing.T) {
 		updatedNode.Status.Conditions[i].LastHeartbeatTime = unversioned.Time{}
 		updatedNode.Status.Conditions[i].LastTransitionTime = unversioned.Time{}
 	}
+
+	// Version skew workaround. See: https://github.com/kubernetes/kubernetes/issues/16961
+	if updatedNode.Status.Conditions[len(updatedNode.Status.Conditions)-1].Type != api.NodeReady {
+		t.Errorf("unexpected node condition order. NodeReady should be last.")
+	}
+
 	if !reflect.DeepEqual(expectedNode, updatedNode) {
 		t.Errorf("unexpected objects: %s", util.ObjectDiff(expectedNode, updatedNode))
 	}
@@ -2793,18 +2804,18 @@ func TestUpdateExistingNodeStatus(t *testing.T) {
 			Status: api.NodeStatus{
 				Conditions: []api.NodeCondition{
 					{
-						Type:               api.NodeReady,
-						Status:             api.ConditionTrue,
-						Reason:             "KubeletReady",
-						Message:            fmt.Sprintf("kubelet is posting ready status"),
-						LastHeartbeatTime:  unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
-						LastTransitionTime: unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
-					},
-					{
 						Type:               api.NodeOutOfDisk,
 						Status:             api.ConditionTrue,
 						Reason:             "KubeletOutOfDisk",
 						Message:            "out of disk space",
+						LastHeartbeatTime:  unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
+						LastTransitionTime: unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
+					},
+					{
+						Type:               api.NodeReady,
+						Status:             api.ConditionTrue,
+						Reason:             "KubeletReady",
+						Message:            fmt.Sprintf("kubelet is posting ready status"),
 						LastHeartbeatTime:  unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
 						LastTransitionTime: unversioned.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
 					},
@@ -2855,18 +2866,18 @@ func TestUpdateExistingNodeStatus(t *testing.T) {
 		Status: api.NodeStatus{
 			Conditions: []api.NodeCondition{
 				{
-					Type:               api.NodeReady,
-					Status:             api.ConditionTrue,
-					Reason:             "KubeletReady",
-					Message:            fmt.Sprintf("kubelet is posting ready status"),
-					LastHeartbeatTime:  unversioned.Time{}, // placeholder
-					LastTransitionTime: unversioned.Time{}, // placeholder
-				},
-				{
 					Type:               api.NodeOutOfDisk,
 					Status:             api.ConditionTrue,
 					Reason:             "KubeletOutOfDisk",
 					Message:            "out of disk space",
+					LastHeartbeatTime:  unversioned.Time{}, // placeholder
+					LastTransitionTime: unversioned.Time{}, // placeholder
+				},
+				{
+					Type:               api.NodeReady,
+					Status:             api.ConditionTrue,
+					Reason:             "KubeletReady",
+					Message:            fmt.Sprintf("kubelet is posting ready status"),
 					LastHeartbeatTime:  unversioned.Time{}, // placeholder
 					LastTransitionTime: unversioned.Time{}, // placeholder
 				},
@@ -2919,6 +2930,11 @@ func TestUpdateExistingNodeStatus(t *testing.T) {
 		}
 		updatedNode.Status.Conditions[i].LastHeartbeatTime = unversioned.Time{}
 		updatedNode.Status.Conditions[i].LastTransitionTime = unversioned.Time{}
+	}
+
+	// Version skew workaround. See: https://github.com/kubernetes/kubernetes/issues/16961
+	if updatedNode.Status.Conditions[len(updatedNode.Status.Conditions)-1].Type != api.NodeReady {
+		t.Errorf("unexpected node condition order. NodeReady should be last.")
 	}
 
 	if !reflect.DeepEqual(expectedNode, updatedNode) {
@@ -2977,18 +2993,18 @@ func TestUpdateNodeStatusWithoutContainerRuntime(t *testing.T) {
 		Status: api.NodeStatus{
 			Conditions: []api.NodeCondition{
 				{
-					Type:               api.NodeReady,
-					Status:             api.ConditionFalse,
-					Reason:             "KubeletNotReady",
-					Message:            fmt.Sprintf("container runtime is down"),
-					LastHeartbeatTime:  unversioned.Time{},
-					LastTransitionTime: unversioned.Time{},
-				},
-				{
 					Type:               api.NodeOutOfDisk,
 					Status:             api.ConditionFalse,
 					Reason:             "KubeletHasSufficientDisk",
 					Message:            "kubelet has sufficient disk space available",
+					LastHeartbeatTime:  unversioned.Time{},
+					LastTransitionTime: unversioned.Time{},
+				},
+				{
+					Type:               api.NodeReady,
+					Status:             api.ConditionFalse,
+					Reason:             "KubeletNotReady",
+					Message:            fmt.Sprintf("container runtime is down"),
 					LastHeartbeatTime:  unversioned.Time{},
 					LastTransitionTime: unversioned.Time{},
 				},
@@ -3040,6 +3056,11 @@ func TestUpdateNodeStatusWithoutContainerRuntime(t *testing.T) {
 		}
 		updatedNode.Status.Conditions[i].LastHeartbeatTime = unversioned.Time{}
 		updatedNode.Status.Conditions[i].LastTransitionTime = unversioned.Time{}
+	}
+
+	// Version skew workaround. See: https://github.com/kubernetes/kubernetes/issues/16961
+	if updatedNode.Status.Conditions[len(updatedNode.Status.Conditions)-1].Type != api.NodeReady {
+		t.Errorf("unexpected node condition order. NodeReady should be last.")
 	}
 
 	if !reflect.DeepEqual(expectedNode, updatedNode) {
@@ -3458,6 +3479,176 @@ func TestRegisterExistingNodeWithApiserver(t *testing.T) {
 	case <-done:
 		return
 	}
+}
+
+func TestGetNodeLabels(t *testing.T) {
+	kubelet := newTestKubelet(t).kubelet
+
+	testCases := []struct {
+		Expecting    map[string]string
+		LabelOptions []string
+		FileContent  string
+		Ok           bool
+	}{
+		{
+			Ok:           true,
+			Expecting:    map[string]string{"key1": "pair1", "key2": "pair2", "key3": "pair3", "key4": "pair4", "key5": "pair5"},
+			LabelOptions: []string{"key5=pair5"},
+			FileContent: `---
+key1: pair1
+key2: pair2
+key3: pair3
+key4: pair4
+`,
+		}, {
+			Ok:           true,
+			Expecting:    map[string]string{"key1": "pair1", "key2": "override"},
+			LabelOptions: []string{"key2=override"},
+			FileContent: `---
+key1: pair1
+key2: pair2
+`,
+		},
+	}
+
+	for i, test := range testCases {
+		fd := createTestNodeLabelFile(t, test.FileContent)
+		defer func(f *os.File) {
+			os.Remove(f.Name())
+		}(fd)
+
+		kubelet.nodeLabels = test.LabelOptions
+		kubelet.nodeLabelsFile = fd.Name()
+
+		list, err := kubelet.getNodeLabels()
+		if test.Ok && err != nil {
+			t.Errorf("test case %d should not have failed, error: %s", i, err)
+		}
+		if !reflect.DeepEqual(test.Expecting, list) {
+			t.Errorf("test case %d are not the same, %v ~ %v", i, list, test.Expecting)
+		}
+	}
+}
+
+func TestRetrieveNodeLabels(t *testing.T) {
+	kubelet := newTestKubelet(t).kubelet
+
+	testCases := []struct {
+		Expecting    map[string]string
+		LabelOptions []string
+		Ok           bool
+	}{
+		{
+			Expecting:    map[string]string{"key1": "pair1", "key2": "pair2", "key3": "pair3", "key4": "pair4"},
+			LabelOptions: []string{"key1=pair1", "key2=pair2", "key3=pair3", "key4=pair4"},
+			Ok:           true,
+		},
+		{
+			Expecting:    map[string]string{"key1": "pair1"},
+			LabelOptions: []string{"key1=pair1", "key2paiwdsr2"},
+		},
+	}
+
+	for i, test := range testCases {
+		list, err := kubelet.retrieveNodeLabels(test.LabelOptions)
+		if test.Ok && err != nil {
+			t.Errorf("test case %d should not have failed, error: %s", i, err)
+		}
+		if !reflect.DeepEqual(test.Expecting, list) {
+			t.Errorf("test case %d are not the same, %v ~ %v", i, list, test.Expecting)
+		}
+	}
+}
+
+func TestRetrieveNodeLabelsFile(t *testing.T) {
+	kubelet := newTestKubelet(t).kubelet
+
+	testCases := []struct {
+		Expecting   map[string]string
+		Ok          bool
+		FileContent string
+	}{
+		{
+			Expecting: map[string]string{"key1": "pair1", "key2": "pair2", "key3": "pair3", "key4": "pair4"},
+			Ok:        true,
+			FileContent: `---
+key1: pair1
+key2: pair2
+key3: pair3
+key4: pair4`,
+		}, {
+			FileContent: `---
+key1: pair1
+hash_map:
+  key2: pair2
+`,
+		}, {
+			Expecting: map[string]string{"key1": "pair1", "key2": "pair2"},
+			Ok:        true,
+			FileContent: `
+
+key1: pair1
+key2: pair2
+`,
+		}, {
+			FileContent: `---
+key1: pair1
+bad_key_pair
+`,
+		}, {
+			Expecting: nil,
+			FileContent: `{
+	"key1": "pair1",
+	"key2": "pair2",
+	"key3": "pair3",
+	"key4": {
+		"some_key": "some_value"
+	}
+}`,
+		}, {
+			FileContent: "",
+		}, {
+			Expecting: map[string]string{"key1": "pair1", "key2": "pair2", "key3": "pair3", "key4": "pair4"},
+			Ok:        true,
+			FileContent: `---
+key1: pair1
+key2: pair2
+key3: pair3
+key4: pair4
+`,
+		},
+	}
+
+	for i, test := range testCases {
+		fd := createTestNodeLabelFile(t, test.FileContent)
+		defer func(f *os.File) {
+			os.Remove(f.Name())
+		}(fd)
+
+		labels, err := kubelet.retrieveNodeLabelsFile(fd.Name())
+		if test.Ok && err != nil {
+			t.Errorf("test case %d should not have returned an error, %s", i, err)
+			continue
+		}
+
+		if test.Expecting != nil && !reflect.DeepEqual(test.Expecting, labels) {
+			t.Errorf("test case %d not as expected, got: %#v, expecting: %#v", i, labels, test.Expecting)
+		}
+	}
+}
+
+func createTestNodeLabelFile(t *testing.T, content string) *os.File {
+	f, err := ioutil.TempFile("", "node_label_file")
+	if err != nil {
+		t.Fatalf("unexpected error creating node_label_file: %v", err)
+	}
+	f.Close()
+
+	if err := ioutil.WriteFile(f.Name(), []byte(content), 0700); err != nil {
+		t.Fatalf("unexpected error writing node label file: %v", err)
+	}
+
+	return f
 }
 
 func TestMakePortMappings(t *testing.T) {

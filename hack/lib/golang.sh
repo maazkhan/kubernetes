@@ -50,6 +50,7 @@ readonly KUBE_SERVER_BINARIES=("${KUBE_SERVER_TARGETS[@]##*/}")
 # The server platform we are building on.
 readonly KUBE_SERVER_PLATFORMS=(
   linux/amd64
+  linux/arm
 )
 
 # The set of client targets that we are building for all platforms
@@ -416,12 +417,12 @@ kube::golang::build_binaries_for_platform() {
   done
 }
 
-# Return approximate physical memory in gigabytes.
+# Return approximate physical memory available in gigabytes.
 kube::golang::get_physmem() {
   local mem
 
   # Linux, in kb
-  if mem=$(grep MemTotal /proc/meminfo | awk '{ print $2 }'); then
+  if mem=$(grep MemAvailable /proc/meminfo | awk '{ print $2 }'); then
     echo $(( ${mem} / 1048576 ))
     return
   fi

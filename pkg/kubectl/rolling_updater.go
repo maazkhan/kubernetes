@@ -342,7 +342,7 @@ func (r *RollingUpdater) scaleDown(newRc, oldRc *api.ReplicationController, desi
 
 // scalerScaleAndWait scales a controller using a Scaler and a real client.
 func (r *RollingUpdater) scaleAndWaitWithScaler(rc *api.ReplicationController, retry *RetryParams, wait *RetryParams) (*api.ReplicationController, error) {
-	scaler, err := ScalerFor("ReplicationController", r.c)
+	scaler, err := ScalerFor(api.Kind("ReplicationController"), r.c)
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't make scaler: %s", err)
 	}
@@ -489,7 +489,7 @@ func extractMaxValue(field intstr.IntOrString, name string, value int) (int, err
 		if field.IntVal < 0 {
 			return 0, fmt.Errorf("%s must be >= 0", name)
 		}
-		return field.IntVal, nil
+		return field.IntValue(), nil
 	case intstr.String:
 		s := strings.Replace(field.StrVal, "%", "", -1)
 		v, err := strconv.Atoi(s)

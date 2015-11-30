@@ -185,6 +185,7 @@ func rcByNamePort(name string, replicas int, image string, port int, labels map[
 func rcByNameContainer(name string, replicas int, image string, labels map[string]string, c api.Container) *api.ReplicationController {
 	// Add "name": name to the labels, overwriting if it exists.
 	labels["name"] = name
+	gracePeriod := int64(0)
 	return &api.ReplicationController{
 		TypeMeta: unversioned.TypeMeta{
 			Kind:       "ReplicationController",
@@ -203,7 +204,8 @@ func rcByNameContainer(name string, replicas int, image string, labels map[strin
 					Labels: labels,
 				},
 				Spec: api.PodSpec{
-					Containers: []api.Container{c},
+					Containers:                    []api.Container{c},
+					TerminationGracePeriodSeconds: &gracePeriod,
 				},
 			},
 		},
@@ -355,7 +357,7 @@ func performTemporaryNetworkFailure(c *client.Client, ns, rcName string, replica
 	}()
 
 	Logf("Waiting %v to ensure node %s is ready before beginning test...", resizeNodeReadyTimeout, node.Name)
-	if !waitForNodeToBe(c, node.Name, true, resizeNodeReadyTimeout) {
+	if !waitForNodeToBe(c, node.Name, api.NodeReady, true, resizeNodeReadyTimeout) {
 		Failf("Node %s did not become ready within %v", node.Name, resizeNodeReadyTimeout)
 	}
 
@@ -371,7 +373,7 @@ func performTemporaryNetworkFailure(c *client.Client, ns, rcName string, replica
 	}
 
 	Logf("Waiting %v for node %s to be not ready after simulated network failure", resizeNodeNotReadyTimeout, node.Name)
-	if !waitForNodeToBe(c, node.Name, false, resizeNodeNotReadyTimeout) {
+	if !waitForNodeToBe(c, node.Name, api.NodeReady, false, resizeNodeNotReadyTimeout) {
 		Failf("Node %s did not become not-ready within %v", node.Name, resizeNodeNotReadyTimeout)
 	}
 
@@ -388,12 +390,16 @@ func performTemporaryNetworkFailure(c *client.Client, ns, rcName string, replica
 
 var _ = Describe("Nodes", func() {
 	framework := NewFramework("resize-nodes")
+	var systemPodsNo int
 	var c *client.Client
 	var ns string
 
 	BeforeEach(func() {
 		c = framework.Client
 		ns = framework.Namespace.Name
+		systemPods, err := c.Pods(api.NamespaceSystem).List(labels.Everything(), fields.Everything())
+		Expect(err).NotTo(HaveOccurred())
+		systemPodsNo = len(systemPods.Items)
 	})
 
 	Describe("Resize", func() {
@@ -424,10 +430,8 @@ var _ = Describe("Nodes", func() {
 			// Many e2e tests assume that the cluster is fully healthy before they start.  Wait until
 			// the cluster is restored to health.
 			By("waiting for system pods to successfully restart")
-			pods, err := framework.Client.Pods(api.NamespaceSystem).List(labels.Everything(), fields.Everything())
-			Expect(err).NotTo(HaveOccurred())
 
-			err = waitForPodsRunningReady(api.NamespaceSystem, len(pods.Items), podReadyBeforeTimeout)
+			err := waitForPodsRunningReady(api.NamespaceSystem, systemPodsNo, podReadyBeforeTimeout)
 			Expect(err).NotTo(HaveOccurred())
 		})
 

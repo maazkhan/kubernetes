@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/admission"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/rest"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/fields"
@@ -72,10 +73,11 @@ type RequestScope struct {
 	Creater   runtime.ObjectCreater
 	Convertor runtime.ObjectConvertor
 
-	Resource    string
-	Subresource string
-	Kind        string
-	APIVersion  string
+	Resource        string
+	Subresource     string
+	Kind            string
+	APIVersion      string
+	InternalVersion unversioned.GroupVersion
 
 	// The version of apiserver resources to use
 	ServerAPIVersion string
@@ -147,15 +149,31 @@ func getRequestOptions(req *restful.Request, scope RequestScope, kind string, su
 		newQuery[subpathKey] = []string{req.PathParameter("path")}
 		query = newQuery
 	}
-	versioned, err := scope.Creater.New(scope.ServerAPIVersion, kind)
+
+	// TODO Options a mess.  Basically the intent is:
+	// 1. try to decode using the expected external GroupVersion
+	// 2. if that fails, fall back to the old external serialization being used before, which was
+	//    "v1" and decode into the unversioned/legacykube group
+	gvString := scope.APIVersion
+	internalGVString := scope.InternalVersion.String()
+
+	versioned, err := scope.Creater.New(gvString, kind)
 	if err != nil {
-		// programmer error
-		return nil, err
+		gvString = "v1"
+		internalGVString = ""
+
+		var secondErr error
+		versioned, secondErr = scope.Creater.New(gvString, kind)
+		// if we have an error, return the original failure
+		if secondErr != nil {
+			return nil, err
+		}
 	}
+
 	if err := scope.Codec.DecodeParametersInto(query, versioned); err != nil {
 		return nil, errors.NewBadRequest(err.Error())
 	}
-	out, err := scope.Convertor.ConvertToVersion(versioned, "")
+	out, err := scope.Convertor.ConvertToVersion(versioned, internalGVString)
 	if err != nil {
 		// programmer error
 		return nil, err
@@ -239,31 +257,24 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 		ctx := scope.ContextFunc(req)
 		ctx = api.WithNamespace(ctx, namespace)
 
-		versioned, err := scope.Creater.New(scope.ServerAPIVersion, "ListOptions")
-		if err != nil {
-			errorJSON(err, scope.Codec, w)
-			return
-		}
-		if err := scope.Codec.DecodeParametersInto(req.Request.URL.Query(), versioned); err != nil {
-			errorJSON(err, scope.Codec, w)
-			return
-		}
-		opts := api.ListOptions{}
-		if err := scope.Convertor.Convert(versioned, &opts); err != nil {
+		opts := unversioned.ListOptions{}
+		if err := scope.Codec.DecodeParametersInto(req.Request.URL.Query(), &opts); err != nil {
 			errorJSON(err, scope.Codec, w)
 			return
 		}
 
 		// transform fields
-		// TODO: Should this be done as part of convertion?
-		fn := func(label, value string) (newLabel, newValue string, err error) {
-			return scope.Convertor.ConvertFieldLabel(scope.APIVersion, scope.Kind, label, value)
-		}
-		if opts.FieldSelector, err = opts.FieldSelector.Transform(fn); err != nil {
-			// TODO: allow bad request to set field causes based on query parameters
-			err = errors.NewBadRequest(err.Error())
-			errorJSON(err, scope.Codec, w)
-			return
+		// TODO: DecodeParametersInto should do this.
+		if opts.FieldSelector.Selector != nil {
+			fn := func(label, value string) (newLabel, newValue string, err error) {
+				return scope.Convertor.ConvertFieldLabel(scope.APIVersion, scope.Kind, label, value)
+			}
+			if opts.FieldSelector.Selector, err = opts.FieldSelector.Selector.Transform(fn); err != nil {
+				// TODO: allow bad request to set field causes based on query parameters
+				err = errors.NewBadRequest(err.Error())
+				errorJSON(err, scope.Codec, w)
+				return
+			}
 		}
 
 		if hasName {
@@ -272,7 +283,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 			// a request for a single object and optimize the
 			// storage query accordingly.
 			nameSelector := fields.OneTermEqualSelector("metadata.name", name)
-			if opts.FieldSelector != nil && !opts.FieldSelector.Empty() {
+			if opts.FieldSelector.Selector != nil && !opts.FieldSelector.Selector.Empty() {
 				// It doesn't make sense to ask for both a name
 				// and a field selector, since just the name is
 				// sufficient to narrow down the request to a
@@ -284,7 +295,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 				)
 				return
 			}
-			opts.FieldSelector = nameSelector
+			opts.FieldSelector.Selector = nameSelector
 		}
 
 		if (opts.Watch || forceWatch) && rw != nil {
@@ -349,7 +360,8 @@ func createHandler(r rest.NamedCreater, scope RequestScope, typer runtime.Object
 		}
 
 		obj := r.New()
-		if err := scope.Codec.DecodeIntoWithSpecifiedVersionKind(body, obj, scope.APIVersion, scope.Kind); err != nil {
+		// TODO this cleans up with proper typing
+		if err := scope.Codec.DecodeIntoWithSpecifiedVersionKind(body, obj, unversioned.ParseGroupVersionOrDie(scope.APIVersion).WithKind(scope.Kind)); err != nil {
 			err = transformDecodeError(typer, err, obj, body)
 			errorJSON(err, scope.Codec, w)
 			return
@@ -582,7 +594,7 @@ func UpdateResource(r rest.Updater, scope RequestScope, typer runtime.ObjectType
 		}
 
 		obj := r.New()
-		if err := scope.Codec.DecodeIntoWithSpecifiedVersionKind(body, obj, scope.APIVersion, scope.Kind); err != nil {
+		if err := scope.Codec.DecodeIntoWithSpecifiedVersionKind(body, obj, unversioned.ParseGroupVersionOrDie(scope.APIVersion).WithKind(scope.Kind)); err != nil {
 			err = transformDecodeError(typer, err, obj, body)
 			errorJSON(err, scope.Codec, w)
 			return
@@ -793,7 +805,7 @@ func checkName(obj runtime.Object, name, namespace string, namer ScopeNamer) err
 // setListSelfLink sets the self link of a list to the base URL, then sets the self links
 // on all child objects returned.
 func setListSelfLink(obj runtime.Object, req *restful.Request, namer ScopeNamer) error {
-	if !runtime.IsListType(obj) {
+	if !meta.IsListType(obj) {
 		return nil
 	}
 
@@ -812,7 +824,7 @@ func setListSelfLink(obj runtime.Object, req *restful.Request, namer ScopeNamer)
 	}
 
 	// Set self-link of objects in the list.
-	items, err := runtime.ExtractList(obj)
+	items, err := meta.ExtractList(obj)
 	if err != nil {
 		return err
 	}
@@ -821,7 +833,7 @@ func setListSelfLink(obj runtime.Object, req *restful.Request, namer ScopeNamer)
 			return err
 		}
 	}
-	return runtime.SetList(obj, items)
+	return meta.SetList(obj, items)
 
 }
 

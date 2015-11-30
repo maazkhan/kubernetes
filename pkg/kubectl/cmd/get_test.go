@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	apitesting "k8s.io/kubernetes/pkg/api/testing"
 	"k8s.io/kubernetes/pkg/api/unversioned"
@@ -121,7 +122,7 @@ func TestGetUnknownSchemaObject(t *testing.T) {
 		Resp:  &http.Response{StatusCode: 200, Body: objBody(codec, &internalType{Name: "foo"})},
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &client.Config{Version: testapi.Default.Version()}
+	tf.ClientConfig = &client.Config{GroupVersion: testapi.Default.GroupVersion()}
 	buf := bytes.NewBuffer([]byte{})
 
 	cmd := NewCmdGet(f, buf)
@@ -193,7 +194,7 @@ func TestGetUnknownSchemaObjectListGeneric(t *testing.T) {
 			}),
 		}
 		tf.Namespace = "test"
-		tf.ClientConfig = &client.Config{Version: testapi.Default.Version()}
+		tf.ClientConfig = &client.Config{GroupVersion: testapi.Default.GroupVersion()}
 		buf := bytes.NewBuffer([]byte{})
 		cmd := NewCmdGet(f, buf)
 		cmd.SetOutput(buf)
@@ -235,7 +236,7 @@ func TestGetSchemaObject(t *testing.T) {
 		Resp:  &http.Response{StatusCode: 200, Body: objBody(codec, &api.ReplicationController{ObjectMeta: api.ObjectMeta{Name: "foo"}})},
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &client.Config{Version: "v1"}
+	tf.ClientConfig = &client.Config{GroupVersion: &unversioned.GroupVersion{Version: "v1"}}
 	buf := bytes.NewBuffer([]byte{})
 
 	cmd := NewCmdGet(f, buf)
@@ -331,7 +332,7 @@ func TestGetListObjects(t *testing.T) {
 func extractResourceList(objs []runtime.Object) ([]runtime.Object, error) {
 	finalObjs := []runtime.Object{}
 	for _, obj := range objs {
-		items, err := runtime.ExtractList(obj)
+		items, err := meta.ExtractList(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -460,7 +461,7 @@ func TestGetMultipleTypeObjectsAsList(t *testing.T) {
 		}),
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &client.Config{Version: testapi.Default.Version()}
+	tf.ClientConfig = &client.Config{GroupVersion: testapi.Default.GroupVersion()}
 	buf := bytes.NewBuffer([]byte{})
 
 	cmd := NewCmdGet(f, buf)
@@ -477,14 +478,14 @@ func TestGetMultipleTypeObjectsAsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	list, err := runtime.ExtractList(out)
+	list, err := meta.ExtractList(out)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if errs := runtime.DecodeList(list, api.Scheme); len(errs) > 0 {
 		t.Fatalf("unexpected error: %v", errs)
 	}
-	if err := runtime.SetList(out, list); err != nil {
+	if err := meta.SetList(out, list); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

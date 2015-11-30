@@ -219,6 +219,8 @@ runTests() {
   hpa_min_field=".spec.minReplicas"
   hpa_max_field=".spec.maxReplicas"
   hpa_cpu_field=".spec.cpuUtilization.targetPercentage"
+  job_parallelism_field=".spec.parallelism"
+  deployment_replicas=".spec.replicas"
 
   # Passing no arguments to create is an error
   ! kubectl create
@@ -611,7 +613,7 @@ runTests() {
   # Pre-Condition: no RC is running
   kube::test::get_object_assert rc "{{range.items}}{{$id_field}}:{{end}}" ''
   # Command: create the rc "nginx" with image nginx
-  kubectl run nginx --image=nginx --save-config "${kube_flags[@]}"
+  kubectl run nginx --image=nginx --save-config --generator=run/v1 "${kube_flags[@]}"
   # Post-Condition: rc "nginx" has configuration annotation
   [[ "$(kubectl get rc nginx -o yaml "${kube_flags[@]}" | grep kubectl.kubernetes.io/last-applied-configuration)" ]]
   ## 5. kubectl expose --save-config should generate configuration annotation
@@ -646,6 +648,24 @@ runTests() {
   [[ "$(kubectl get pods test-pod -o yaml "${kube_flags[@]}" | grep kubectl.kubernetes.io/last-applied-configuration)" ]]
   # Clean up 
   kubectl delete pods test-pod "${kube_flags[@]}"
+
+  ## kubectl run should create deployments or jobs 
+  # Pre-Condition: no Job is running 
+  kube::test::get_object_assert jobs "{{range.items}}{{$id_field}}:{{end}}" ''
+  # Command
+  kubectl run pi --image=perl --restart=OnFailure -- perl -Mbignum=bpi -wle 'print bpi(20)'
+  # Post-Condition: Job "pi" is created 
+  kube::test::get_object_assert jobs "{{range.items}}{{$id_field}}:{{end}}" 'pi:'
+  # Clean up
+  kubectl delete jobs pi
+  # Pre-Condition: no Deployment is running 
+  kube::test::get_object_assert deployment "{{range.items}}{{$id_field}}:{{end}}" ''
+  # Command
+  kubectl run nginx --image=nginx --generator=deployment/v1beta1
+  # Post-Condition: Deployment "nginx" is created 
+  kube::test::get_object_assert deployment "{{range.items}}{{$id_field}}:{{end}}" 'nginx:'
+  # Clean up 
+  kubectl delete deployment nginx
 
   ##############
   # Namespaces #
@@ -854,6 +874,23 @@ __EOF__
   kube::test::get_object_assert 'rc redis-slave' "{{$rc_replicas_field}}" '4'
   # Clean-up
   kubectl delete rc redis-{master,slave} "${kube_flags[@]}"
+
+  ### Scale a job
+  kubectl create -f docs/user-guide/job.yaml "${kube_flags[@]}"
+  # Command
+  kubectl scale --replicas=2 job/pi
+  # Post-condition: 2 replicas for pi
+  kube::test::get_object_assert 'job pi' "{{$job_parallelism_field}}" '2'
+  # Clean-up
+  kubectl delete job/pi "${kube_flags[@]}"
+  ### Scale a deployment
+  kubectl create -f examples/extensions/deployment.yaml "${kube_flags[@]}"
+  # Command
+  kubectl scale --current-replicas=3 --replicas=1 deployment/nginx-deployment
+  # Post-condition: 1 replica for nginx-deployment
+  kube::test::get_object_assert 'deployment nginx-deployment' "{{$deployment_replicas}}" '1'
+  # Clean-up
+  kubectl delete deployment/nginx-deployment "${kube_flags[@]}"
 
   ### Expose replication controller as service
   # Pre-condition: 2 replicas
@@ -1199,8 +1236,8 @@ __EOF__
   kubectl create -f examples/cassandra/cassandra-controller.yaml "${kube_flags[@]}"
   kubectl scale rc cassandra --replicas=1 "${kube_flags[@]}"
   kubectl create -f examples/cassandra/cassandra-service.yaml "${kube_flags[@]}"
-  kube::test::get_object_assert "all -l'name=cassandra'" "{{range.items}}{{range .metadata.labels}}{{.}}:{{end}}{{end}}" 'cassandra:cassandra:cassandra:'
-  kubectl delete all -l name=cassandra "${kube_flags[@]}"
+  kube::test::get_object_assert "all -l'app=cassandra'" "{{range.items}}{{range .metadata.labels}}{{.}}:{{end}}{{end}}" 'cassandra:cassandra:cassandra:'
+  kubectl delete all -l app=cassandra "${kube_flags[@]}"
 
 
   ###########

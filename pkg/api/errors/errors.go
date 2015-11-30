@@ -24,7 +24,6 @@ import (
 
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
-	utilerrors "k8s.io/kubernetes/pkg/util/errors"
 	"k8s.io/kubernetes/pkg/util/validation"
 )
 
@@ -162,13 +161,12 @@ func NewConflict(kind, name string, err error) error {
 func NewInvalid(kind, name string, errs validation.ErrorList) error {
 	causes := make([]unversioned.StatusCause, 0, len(errs))
 	for i := range errs {
-		if err, ok := errs[i].(*validation.Error); ok {
-			causes = append(causes, unversioned.StatusCause{
-				Type:    unversioned.CauseType(err.Type),
-				Message: err.ErrorBody(),
-				Field:   err.Field,
-			})
-		}
+		err := errs[i]
+		causes = append(causes, unversioned.StatusCause{
+			Type:    unversioned.CauseType(err.Type),
+			Message: err.ErrorBody(),
+			Field:   err.Field,
+		})
 	}
 	return &StatusError{unversioned.Status{
 		Status: unversioned.StatusFailure,
@@ -179,7 +177,7 @@ func NewInvalid(kind, name string, errs validation.ErrorList) error {
 			Name:   name,
 			Causes: causes,
 		},
-		Message: fmt.Sprintf("%s %q is invalid: %v", kind, name, utilerrors.NewAggregate(errs)),
+		Message: fmt.Sprintf("%s %q is invalid: %v", kind, name, errs.ToAggregate()),
 	}}
 }
 
@@ -226,7 +224,7 @@ func NewServerTimeout(kind, operation string, retryAfterSeconds int) error {
 		Details: &unversioned.StatusDetails{
 			Kind:              kind,
 			Name:              operation,
-			RetryAfterSeconds: retryAfterSeconds,
+			RetryAfterSeconds: int32(retryAfterSeconds),
 		},
 		Message: fmt.Sprintf("The %s operation against %s could not be completed at this time, please try again.", operation, kind),
 	}}
@@ -254,7 +252,7 @@ func NewTimeoutError(message string, retryAfterSeconds int) error {
 		Reason:  unversioned.StatusReasonTimeout,
 		Message: fmt.Sprintf("Timeout: %s", message),
 		Details: &unversioned.StatusDetails{
-			RetryAfterSeconds: retryAfterSeconds,
+			RetryAfterSeconds: int32(retryAfterSeconds),
 		},
 	}}
 }
@@ -320,14 +318,14 @@ func NewGenericServerResponse(code int, verb, kind, name, serverMessage string, 
 	}
 	return &StatusError{unversioned.Status{
 		Status: unversioned.StatusFailure,
-		Code:   code,
+		Code:   int32(code),
 		Reason: reason,
 		Details: &unversioned.StatusDetails{
 			Kind: kind,
 			Name: name,
 
 			Causes:            causes,
-			RetryAfterSeconds: retryAfterSeconds,
+			RetryAfterSeconds: int32(retryAfterSeconds),
 		},
 		Message: message,
 	}}
@@ -412,7 +410,7 @@ func SuggestsClientDelay(err error) (int, bool) {
 		if t.Status().Details != nil {
 			switch t.Status().Reason {
 			case unversioned.StatusReasonServerTimeout, unversioned.StatusReasonTimeout:
-				return t.Status().Details.RetryAfterSeconds, true
+				return int(t.Status().Details.RetryAfterSeconds), true
 			}
 		}
 	}

@@ -114,27 +114,30 @@ type CloudConfig struct {
 	NodeInstanceGroup string
 	NumNodes          int
 	ClusterTag        string
+	ServiceAccount    string
 
 	Provider cloudprovider.Interface
 }
 
 type TestContextType struct {
-	KubeConfig                        string
-	KubeContext                       string
-	CertDir                           string
-	Host                              string
-	RepoRoot                          string
-	Provider                          string
-	CloudConfig                       CloudConfig
-	KubectlPath                       string
-	OutputDir                         string
-	prefix                            string
-	MinStartupPods                    int
-	UpgradeTarget                     string
-	PrometheusPushGateway             string
-	VerifyServiceAccount              bool
-	DeleteNamespace                   bool
-	CleanStart                        bool
+	KubeConfig            string
+	KubeContext           string
+	CertDir               string
+	Host                  string
+	RepoRoot              string
+	Provider              string
+	CloudConfig           CloudConfig
+	KubectlPath           string
+	OutputDir             string
+	prefix                string
+	MinStartupPods        int
+	UpgradeTarget         string
+	PrometheusPushGateway string
+	VerifyServiceAccount  bool
+	DeleteNamespace       bool
+	CleanStart            bool
+	// If set to true framework will start a goroutine monitoring resource usage of system add-ons.
+	// It will read the data every 30 seconds from all Nodes and print summary during afterEach.
 	GatherKubeSystemResourceUsageData bool
 }
 
@@ -160,7 +163,7 @@ func newPodStore(c *client.Client, namespace string, label labels.Selector, fiel
 		ListFunc: func() (runtime.Object, error) {
 			return c.Pods(namespace).List(label, field)
 		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+		WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 			return c.Pods(namespace).Watch(label, field, options)
 		},
 	}
@@ -765,7 +768,10 @@ func waitForPodToDisappear(c *client.Client, ns, podName string, label labels.Se
 // In case of failure or too long waiting time, an error is returned.
 func waitForRCPodToDisappear(c *client.Client, ns, rcName, podName string) error {
 	label := labels.SelectorFromSet(labels.Set(map[string]string{"name": rcName}))
-	return waitForPodToDisappear(c, ns, podName, label, 20*time.Second, 5*time.Minute)
+	// NodeController evicts pod after 5 minutes, so we need timeout greater than that.
+	// Additionally, there can be non-zero grace period, so we are setting 10 minutes
+	// to be on the safe size.
+	return waitForPodToDisappear(c, ns, podName, label, 20*time.Second, 10*time.Minute)
 }
 
 // waitForService waits until the service appears (exist == true), or disappears (exist == false)
@@ -1665,8 +1671,8 @@ func dumpNodeDebugInfo(c *client.Client, nodeNames []string) {
 
 		Logf("\nLogging kubelet events for node %v", n)
 		for _, e := range getNodeEvents(c, n) {
-			Logf("source %v message %v reason %v first ts %v last ts %v, involved obj %+v",
-				e.Source, e.Message, e.Reason, e.FirstTimestamp, e.LastTimestamp, e.InvolvedObject)
+			Logf("source %v type %v message %v reason %v first ts %v last ts %v, involved obj %+v",
+				e.Source, e.Type, e.Message, e.Reason, e.FirstTimestamp, e.LastTimestamp, e.InvolvedObject)
 		}
 		Logf("\nLogging pods the kubelet thinks is on node %v", n)
 		podList, err := GetKubeletPods(c, n)
@@ -1707,7 +1713,7 @@ func getNodeEvents(c *client.Client, nodeName string) []api.Event {
 
 func ScaleRC(c *client.Client, ns, name string, size uint, wait bool) error {
 	By(fmt.Sprintf("Scaling replication controller %s in namespace %s to %d", name, ns, size))
-	scaler, err := kubectl.ScalerFor("ReplicationController", c)
+	scaler, err := kubectl.ScalerFor(api.Kind("ReplicationController"), c)
 	if err != nil {
 		return err
 	}
@@ -2048,6 +2054,26 @@ func LogSSHResult(result SSHResult) {
 	Logf("ssh %s: exit code: %d", remote, result.Code)
 }
 
+func issueSSHCommand(cmd, provider string, node *api.Node) error {
+	Logf("Getting external IP address for %s", node.Name)
+	host := ""
+	for _, a := range node.Status.Addresses {
+		if a.Type == api.NodeExternalIP {
+			host = a.Address + ":22"
+			break
+		}
+	}
+	if host == "" {
+		return fmt.Errorf("couldn't find external IP address for node %s", node.Name)
+	}
+	Logf("Calling %s on %s", cmd, node.Name)
+	if result, err := SSH(cmd, host, provider); result.Code != 0 || err != nil {
+		LogSSHResult(result)
+		return fmt.Errorf("failed running %q: %v (exit code %d)", cmd, err, result.Code)
+	}
+	return nil
+}
+
 // NewHostExecPodSpec returns the pod spec of hostexec pod
 func NewHostExecPodSpec(ns, name string) *api.Pod {
 	pod := &api.Pod{
@@ -2110,7 +2136,7 @@ func getSigner(provider string) (ssh.Signer, error) {
 	// support.
 	keyfile := ""
 	switch provider {
-	case "gce", "gke":
+	case "gce", "gke", "kubemark":
 		keyfile = "google_compute_engine"
 	case "aws":
 		// If there is an env. variable override, use that.
@@ -2157,38 +2183,37 @@ func checkPodsRunningReady(c *client.Client, ns string, podNames []string, timeo
 
 // waitForNodeToBeReady returns whether node name is ready within timeout.
 func waitForNodeToBeReady(c *client.Client, name string, timeout time.Duration) bool {
-	return waitForNodeToBe(c, name, true, timeout)
+	return waitForNodeToBe(c, name, api.NodeReady, true, timeout)
 }
 
 // waitForNodeToBeNotReady returns whether node name is not ready (i.e. the
 // readiness condition is anything but ready, e.g false or unknown) within
 // timeout.
 func waitForNodeToBeNotReady(c *client.Client, name string, timeout time.Duration) bool {
-	return waitForNodeToBe(c, name, false, timeout)
+	return waitForNodeToBe(c, name, api.NodeReady, false, timeout)
 }
 
-func isNodeReadySetAsExpected(node *api.Node, wantReady bool) bool {
+func isNodeConditionSetAsExpected(node *api.Node, conditionType api.NodeConditionType, wantTrue bool) bool {
 	// Check the node readiness condition (logging all).
 	for i, cond := range node.Status.Conditions {
 		Logf("Node %s condition %d/%d: type: %v, status: %v, reason: %q, message: %q, last transition time: %v",
 			node.Name, i+1, len(node.Status.Conditions), cond.Type, cond.Status,
 			cond.Reason, cond.Message, cond.LastTransitionTime)
-		// Ensure that the condition type is readiness and the status
-		// matches as desired.
-		if cond.Type == api.NodeReady && (cond.Status == api.ConditionTrue) == wantReady {
-			Logf("Successfully found node %s readiness to be %t", node.Name, wantReady)
+		// Ensure that the condition type and the status matches as desired.
+		if cond.Type == conditionType && (cond.Status == api.ConditionTrue) == wantTrue {
+			Logf("Successfully found condition %s of node %s to be %t", conditionType, node.Name, wantTrue)
 			return true
 		}
 	}
 	return false
 }
 
-// waitForNodeToBe returns whether node name's readiness state matches wantReady
-// within timeout. If wantReady is true, it will ensure the node is ready; if
-// it's false, it ensures the node is in any state other than ready (e.g. not
-// ready or unknown).
-func waitForNodeToBe(c *client.Client, name string, wantReady bool, timeout time.Duration) bool {
-	Logf("Waiting up to %v for node %s readiness to be %t", timeout, name, wantReady)
+// waitForNodeToBe returns whether node "name's" condition state matches wantTrue
+// within timeout. If wantTrue is true, it will ensure the node condition status
+// is ConditionTrue; if it's false, it ensures the node condition is in any state
+// other than ConditionTrue (e.g. not true or unknown).
+func waitForNodeToBe(c *client.Client, name string, conditionType api.NodeConditionType, wantTrue bool, timeout time.Duration) bool {
+	Logf("Waiting up to %v for node %s condition %s to be %t", timeout, name, conditionType, wantTrue)
 	for start := time.Now(); time.Since(start) < timeout; time.Sleep(poll) {
 		node, err := c.Nodes().Get(name)
 		if err != nil {
@@ -2196,11 +2221,11 @@ func waitForNodeToBe(c *client.Client, name string, wantReady bool, timeout time
 			continue
 		}
 
-		if isNodeReadySetAsExpected(node, wantReady) {
+		if isNodeConditionSetAsExpected(node, conditionType, wantTrue) {
 			return true
 		}
 	}
-	Logf("Node %s didn't reach desired readiness (%t) within %v", name, wantReady, timeout)
+	Logf("Node %s didn't reach desired %s condition status (%t) within %v", name, conditionType, wantTrue, timeout)
 	return false
 }
 
@@ -2216,7 +2241,7 @@ func allNodesReady(c *client.Client, timeout time.Duration) error {
 			return false, err
 		}
 		for _, node := range nodes.Items {
-			if !isNodeReadySetAsExpected(&node, true) {
+			if !isNodeConditionSetAsExpected(&node, api.NodeReady, true) {
 				notReady = append(notReady, node)
 			}
 		}
@@ -2339,7 +2364,7 @@ func waitForClusterSize(c *client.Client, size int, timeout time.Duration) error
 
 		// Filter out not-ready nodes.
 		filterNodes(nodes, func(node api.Node) bool {
-			return isNodeReadySetAsExpected(&node, true)
+			return isNodeConditionSetAsExpected(&node, api.NodeReady, true)
 		})
 		numReady := len(nodes.Items)
 
@@ -2461,4 +2486,42 @@ func waitForIngressAddress(c *client.Client, ns, ingName string, timeout time.Du
 		return true, nil
 	})
 	return address, err
+}
+
+// Looks for the given string in the log of a specific pod container
+func lookForStringInLog(ns, podName, container, expectedString string, timeout time.Duration) (result string, err error) {
+	return lookForString(expectedString, timeout, func() string {
+		return runKubectlOrDie("log", podName, container, fmt.Sprintf("--namespace=%v", ns))
+	})
+}
+
+// Looks for the given string in a file in a specific pod container
+func lookForStringInFile(ns, podName, container, file, expectedString string, timeout time.Duration) (result string, err error) {
+	return lookForString(expectedString, timeout, func() string {
+		return runKubectlOrDie("exec", podName, "-c", container, fmt.Sprintf("--namespace=%v", ns), "--", "cat", file)
+	})
+}
+
+// Looks for the given string in the output of a command executed in a specific pod container
+func lookForStringInPodExec(ns, podName string, command []string, expectedString string, timeout time.Duration) (result string, err error) {
+	return lookForString(expectedString, timeout, func() string {
+		// use the first container
+		args := []string{"exec", podName, fmt.Sprintf("--namespace=%v", ns), "--"}
+		args = append(args, command...)
+		return runKubectlOrDie(args...)
+	})
+}
+
+// Looks for the given string in the output of fn, repeatedly calling fn until
+// the timeout is reached or the string is found. Returns last log and possibly
+// error if the string was not found.
+func lookForString(expectedString string, timeout time.Duration, fn func() string) (result string, err error) {
+	for t := time.Now(); time.Since(t) < timeout; time.Sleep(poll) {
+		result = fn()
+		if strings.Contains(result, expectedString) {
+			return
+		}
+	}
+	err = fmt.Errorf("Failed to find \"%s\", last result: \"%s\"", expectedString, result)
+	return
 }

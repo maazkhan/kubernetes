@@ -70,17 +70,20 @@ func extractLatencyMetrics(latencies []podLatencyData) LatencyMetric {
 	return LatencyMetric{Perc50: perc50, Perc90: perc90, Perc99: perc99}
 }
 
-// This test suite can take a long time to run, so by default it is added to
-// the ginkgo.skip list (see driver.go).
+// This test suite can take a long time to run, and can affect or be affected by other tests.
+// So by default it is added to the ginkgo.skip list (see driver.go).
 // To run this suite you must explicitly ask for it by setting the
 // -t/--test flag or ginkgo.focus flag.
-var _ = Describe("Density", func() {
+var _ = Describe("Density [Skipped]", func() {
 	var c *client.Client
 	var nodeCount int
 	var RCName string
 	var additionalPodsPrefix string
 	var ns string
 	var uuid string
+
+	framework := NewFramework("density")
+	framework.NamespaceDeletionTimeout = time.Hour
 
 	// Gathers data prior to framework namespace teardown
 	AfterEach(func() {
@@ -104,15 +107,16 @@ var _ = Describe("Density", func() {
 
 		expectNoError(writePerfData(c, fmt.Sprintf(testContext.OutputDir+"/%s", uuid), "after"))
 
-		// Verify latency metrics
+		// Verify latency metrics.
 		highLatencyRequests, err := HighLatencyRequests(c)
 		expectNoError(err)
 		Expect(highLatencyRequests).NotTo(BeNumerically(">", 0), "There should be no high-latency requests")
-	})
 
-	framework := NewFramework("density")
-	framework.NamespaceDeletionTimeout = time.Hour
-	framework.GatherKubeSystemResourceUsageData = testContext.GatherKubeSystemResourceUsageData
+		// Verify scheduler metrics.
+		// TODO: Reset metrics at the beginning of the test.
+		// We should do something similar to how we do it for APIserver.
+		expectNoError(VerifySchedulerLatency())
+	})
 
 	BeforeEach(func() {
 		c = framework.Client
@@ -151,10 +155,7 @@ var _ = Describe("Density", func() {
 		}
 	})
 
-	// Tests with "Skipped" substring in their name will be skipped when running
-	// e2e test suite without --ginkgo.focus & --ginkgo.skip flags.
 	type Density struct {
-		skip bool
 		// Controls if e2e latency tests should be run (they are slow)
 		runLatencyTest bool
 		podsPerNode    int
@@ -163,25 +164,19 @@ var _ = Describe("Density", func() {
 	}
 
 	densityTests := []Density{
-		// This test should not be run in a regular jenkins run, because it is not isolated enough
-		// (metrics from other tests affects this one).
-		// TODO: Reenable once we can measure latency only from a single test.
 		// TODO: Expose runLatencyTest as ginkgo flag.
-		{podsPerNode: 3, skip: true, runLatencyTest: false, interval: 10 * time.Second},
-		{podsPerNode: 30, skip: true, runLatencyTest: true, interval: 10 * time.Second},
+		{podsPerNode: 3, runLatencyTest: false, interval: 10 * time.Second},
+		{podsPerNode: 30, runLatencyTest: true, interval: 10 * time.Second},
 		// More than 30 pods per node is outside our v1.0 goals.
 		// We might want to enable those tests in the future.
-		{podsPerNode: 50, skip: true, runLatencyTest: false, interval: 10 * time.Second},
-		{podsPerNode: 100, skip: true, runLatencyTest: false, interval: 1 * time.Second},
+		{podsPerNode: 50, runLatencyTest: false, interval: 10 * time.Second},
+		{podsPerNode: 100, runLatencyTest: false, interval: 1 * time.Second},
 	}
 
 	for _, testArg := range densityTests {
 		name := fmt.Sprintf("should allow starting %d pods per node", testArg.podsPerNode)
 		if testArg.podsPerNode == 30 {
-			name = "[Performance suite] " + name
-		}
-		if testArg.skip {
-			name = "[Skipped] " + name
+			name = "[Performance] " + name
 		}
 		itArg := testArg
 		It(name, func() {
@@ -207,7 +202,7 @@ var _ = Describe("Density", func() {
 					ListFunc: func() (runtime.Object, error) {
 						return c.Events(ns).List(labels.Everything(), fields.Everything())
 					},
-					WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+					WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 						return c.Events(ns).Watch(labels.Everything(), fields.Everything(), options)
 					},
 				},
@@ -290,7 +285,7 @@ var _ = Describe("Density", func() {
 						ListFunc: func() (runtime.Object, error) {
 							return c.Pods(ns).List(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything())
 						},
-						WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+						WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 							return c.Pods(ns).Watch(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything(), options)
 						},
 					},

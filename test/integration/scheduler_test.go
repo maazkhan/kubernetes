@@ -22,6 +22,7 @@ package integration
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -91,9 +92,10 @@ func TestUnschedulableNodes(t *testing.T) {
 		Authorizer:            apiserver.NewAlwaysAllowAuthorizer(),
 		AdmissionControl:      admit.NewAlwaysAdmit(),
 		StorageVersions:       storageVersions,
+		PublicAddress:         net.ParseIP("192.168.10.4"),
 	})
 
-	restClient := client.NewOrDie(&client.Config{Host: s.URL, Version: testapi.Default.Version()})
+	restClient := client.NewOrDie(&client.Config{Host: s.URL, GroupVersion: testapi.Default.GroupVersion()})
 
 	schedulerConfigFactory := factory.NewConfigFactory(restClient, nil)
 	schedulerConfig, err := schedulerConfigFactory.Create()
@@ -341,13 +343,14 @@ func BenchmarkScheduling(b *testing.B) {
 		Authorizer:            apiserver.NewAlwaysAllowAuthorizer(),
 		AdmissionControl:      admit.NewAlwaysAdmit(),
 		StorageVersions:       storageVersions,
+		PublicAddress:         net.ParseIP("192.168.10.4"),
 	})
 
 	c := client.NewOrDie(&client.Config{
-		Host:    s.URL,
-		Version: testapi.Default.Version(),
-		QPS:     5000.0,
-		Burst:   5000,
+		Host:         s.URL,
+		GroupVersion: testapi.Default.GroupVersion(),
+		QPS:          5000.0,
+		Burst:        5000,
 	})
 
 	schedulerConfigFactory := factory.NewConfigFactory(c, nil)

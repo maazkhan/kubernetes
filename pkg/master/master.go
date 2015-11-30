@@ -76,6 +76,7 @@ import (
 	thirdpartyresourcedataetcd "k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata/etcd"
 	"k8s.io/kubernetes/pkg/storage"
 	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
+	etcdutil "k8s.io/kubernetes/pkg/storage/etcd/util"
 	"k8s.io/kubernetes/pkg/tools"
 	"k8s.io/kubernetes/pkg/ui"
 	"k8s.io/kubernetes/pkg/util"
@@ -399,19 +400,6 @@ func setDefaults(c *Config) {
 	}
 	if c.CacheTimeout == 0 {
 		c.CacheTimeout = 5 * time.Second
-	}
-	for c.PublicAddress == nil || c.PublicAddress.IsUnspecified() || c.PublicAddress.IsLoopback() {
-		// TODO: This should be done in the caller and just require a
-		// valid value to be passed in.
-		hostIP, err := util.ChooseHostInterface()
-		if err != nil {
-			glog.Fatalf("Unable to find suitable network address.error='%v' . "+
-				"Will try again in 5 seconds. Set the public address directly to avoid this wait.", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		c.PublicAddress = hostIP
-		glog.Infof("Will report %v as public IP address.", c.PublicAddress)
 	}
 	if c.RequestContextMapper == nil {
 		c.RequestContextMapper = api.NewRequestContextMapper()
@@ -855,7 +843,7 @@ func (m *Master) getServersToValidate(c *Config) map[string]apiserver.Server {
 			addr = etcdUrl.Host
 			port = 4001
 		}
-		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = apiserver.Server{Addr: addr, Port: port, Path: "/health", Validate: etcdstorage.EtcdHealthCheck}
+		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = apiserver.Server{Addr: addr, Port: port, Path: "/health", Validate: etcdutil.EtcdHealthCheck}
 	}
 	return serversToValidate
 }

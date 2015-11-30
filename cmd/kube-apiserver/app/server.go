@@ -36,6 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/latest"
 	"k8s.io/kubernetes/pkg/api/meta"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	apiutil "k8s.io/kubernetes/pkg/api/util"
 	"k8s.io/kubernetes/pkg/api/validation"
 	"k8s.io/kubernetes/pkg/apiserver"
@@ -366,12 +367,17 @@ func (s *APIServer) Run(_ []string) error {
 	s.verifyClusterIPFlags()
 
 	// If advertise-address is not specified, use bind-address. If bind-address
-	// is not usable (unset, 0.0.0.0, or loopback), setDefaults() in
-	// pkg/master/master.go will do the right thing and use the host's default
-	// interface.
+	// is not usable (unset, 0.0.0.0, or loopback), we will use the host's default
+	// interface as valid public addr for master (see: util#ValidPublicAddrForMaster)
 	if s.AdvertiseAddress == nil || s.AdvertiseAddress.IsUnspecified() {
-		s.AdvertiseAddress = s.BindAddress
+		hostIP, err := util.ValidPublicAddrForMaster(s.BindAddress)
+		if err != nil {
+			glog.Fatalf("Unable to find suitable network address.error='%v' . "+
+				"Try to set the AdvertiseAddress directly or provide a valid BindAddress to fix this.", err)
+		}
+		s.AdvertiseAddress = hostIP
 	}
+	glog.Infof("Will report %v as public IP address.", s.AdvertiseAddress)
 
 	if (s.EtcdConfigFile != "" && len(s.EtcdServerList) != 0) || (s.EtcdConfigFile == "" && len(s.EtcdServerList) == 0) {
 		glog.Fatalf("Specify either --etcd-servers or --etcd-config")
@@ -432,9 +438,16 @@ func (s *APIServer) Run(_ []string) error {
 	}
 
 	clientConfig := &client.Config{
-		Host:    net.JoinHostPort(s.InsecureBindAddress.String(), strconv.Itoa(s.InsecurePort)),
-		Version: s.DeprecatedStorageVersion,
+		Host: net.JoinHostPort(s.InsecureBindAddress.String(), strconv.Itoa(s.InsecurePort)),
 	}
+	if len(s.DeprecatedStorageVersion) != 0 {
+		gv, err := unversioned.ParseGroupVersion(s.DeprecatedStorageVersion)
+		if err != nil {
+			glog.Fatalf("error in parsing group version: %s", err)
+		}
+		clientConfig.GroupVersion = &gv
+	}
+
 	client, err := client.New(clientConfig)
 	if err != nil {
 		glog.Fatalf("Invalid server address: %v", err)

@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"k8s.io/kubernetes/pkg/api"
-	unversioned "k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller/framework"
@@ -39,7 +39,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[Performance Suite] Latency", func() {
+var _ = Describe("Latency [Skipped]", func() {
 	var c *client.Client
 	var nodeCount int
 	var additionalPodsPrefix string
@@ -51,11 +51,6 @@ var _ = Describe("[Performance Suite] Latency", func() {
 		for i := 1; i <= nodeCount; i++ {
 			name := additionalPodsPrefix + "-" + strconv.Itoa(i)
 			c.Pods(ns).Delete(name, nil)
-		}
-
-		By(fmt.Sprintf("Destroying namespace for this suite %v", ns))
-		if err := c.Namespaces().Delete(ns); err != nil {
-			Failf("Couldn't delete ns %s", err)
 		}
 
 		expectNoError(writePerfData(c, fmt.Sprintf(testContext.OutputDir+"/%s", uuid), "after"))
@@ -100,8 +95,7 @@ var _ = Describe("[Performance Suite] Latency", func() {
 		}
 	})
 
-	// Skipped to avoid running in e2e
-	It("[Skipped] pod start latency should be acceptable", func() {
+	It("pod start latency should be acceptable", func() {
 		runLatencyTest(nodeCount, c, ns)
 	})
 })
@@ -152,7 +146,7 @@ func runLatencyTest(nodeCount int, c *client.Client, ns string) {
 			ListFunc: func() (runtime.Object, error) {
 				return c.Pods(ns).List(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything())
 			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 				return c.Pods(ns).Watch(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything(), options)
 			},
 		},

@@ -137,8 +137,8 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 		Updates:   updates,
 		NodeInfos: make(chan NodeInfo, 1),
 		APIClient: client.NewOrDie(&client.Config{
-			Host:    testApiServer.server.URL,
-			Version: testapi.Default.Version(),
+			Host:         testApiServer.server.URL,
+			GroupVersion: testapi.Default.GroupVersion(),
 		}),
 		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
 			return &api.PodStatus{
@@ -338,8 +338,8 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 		Updates:   make(chan kubetypes.PodUpdate, 1024),
 		NodeInfos: make(chan NodeInfo, 1),
 		APIClient: client.NewOrDie(&client.Config{
-			Host:    testApiServer.server.URL,
-			Version: testapi.Default.Version(),
+			Host:         testApiServer.server.URL,
+			GroupVersion: testapi.Default.GroupVersion(),
 		}),
 		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
 			return &api.PodStatus{
@@ -494,7 +494,7 @@ func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
 		list:        initialPodList,
 	}
 	lw.ListWatch = cache.ListWatch{
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+		WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 			return lw.fakeWatcher, nil
 		},
 		ListFunc: func() (runtime.Object, error) {

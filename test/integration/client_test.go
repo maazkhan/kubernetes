@@ -29,6 +29,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
@@ -44,7 +45,7 @@ func TestClient(t *testing.T) {
 
 	ns := api.NamespaceDefault
 	framework.DeleteAllEtcdKeys()
-	client := client.NewOrDie(&client.Config{Host: s.URL, Version: testapi.Default.Version()})
+	client := client.NewOrDie(&client.Config{Host: s.URL, GroupVersion: testapi.Default.GroupVersion()})
 
 	info, err := client.ServerVersion()
 	if err != nil {
@@ -114,7 +115,7 @@ func TestSingleWatch(t *testing.T) {
 
 	ns := "blargh"
 	deleteAllEtcdKeys()
-	client := client.NewOrDie(&client.Config{Host: s.URL, Version: testapi.Default.Version()})
+	client := client.NewOrDie(&client.Config{Host: s.URL, GroupVersion: testapi.Default.GroupVersion()})
 
 	mkEvent := func(i int) *api.Event {
 		name := fmt.Sprintf("event-%v", i)
@@ -198,7 +199,7 @@ func TestMultiWatch(t *testing.T) {
 	defer s.Close()
 
 	ns := api.NamespaceDefault
-	client := client.NewOrDie(&client.Config{Host: s.URL, Version: testapi.Default.Version()})
+	client := client.NewOrDie(&client.Config{Host: s.URL, GroupVersion: testapi.Default.GroupVersion()})
 
 	dummyEvent := func(i int) *api.Event {
 		name := fmt.Sprintf("unrelated-%v", i)
@@ -247,7 +248,7 @@ func TestMultiWatch(t *testing.T) {
 			w, err := client.Pods(ns).Watch(
 				labels.Set{"watchlabel": name}.AsSelector(),
 				fields.Everything(),
-				api.ListOptions{ResourceVersion: rv},
+				unversioned.ListOptions{ResourceVersion: rv},
 			)
 			if err != nil {
 				panic(fmt.Sprintf("watch error for %v: %v", name, err))

@@ -719,11 +719,11 @@ type Probe struct {
 	// The action taken to determine the health of a container
 	Handler `json:",inline"`
 	// Length of time before health checking is activated.  In seconds.
-	InitialDelaySeconds int64 `json:"initialDelaySeconds,omitempty"`
+	InitialDelaySeconds int `json:"initialDelaySeconds,omitempty"`
 	// Length of time before health checking times out.  In seconds.
-	TimeoutSeconds int64 `json:"timeoutSeconds,omitempty"`
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 	// How often (in seconds) to perform the probe.
-	PeriodSeconds int64 `json:"periodSeconds,omitempty"`
+	PeriodSeconds int `json:"periodSeconds,omitempty"`
 	// Minimum consecutive successes for the probe to be considered successful after having failed.
 	// Must be 1 for liveness.
 	SuccessThreshold int `json:"successThreshold,omitempty"`
@@ -1781,6 +1781,14 @@ type EventSource struct {
 	Host string `json:"host,omitempty"`
 }
 
+// Valid values for event types (new types could be added in future)
+const (
+	// Information only and will not cause any problems
+	EventTypeNormal string = "Normal"
+	// These events are to warn that something might go wrong
+	EventTypeWarning string = "Warning"
+)
+
 // Event is a report of an event somewhere in the cluster.
 // TODO: Decide whether to store these separately or with the object they apply to.
 type Event struct {
@@ -1811,6 +1819,9 @@ type Event struct {
 
 	// The number of times this event has occurred.
 	Count int `json:"count,omitempty"`
+
+	// Type of this event (Normal, Warning), new types could be added in the future.
+	Type string `json:"type,omitempty"`
 }
 
 // EventList is a list of events.

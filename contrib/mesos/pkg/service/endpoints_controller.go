@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/endpoints"
 	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	kservice "k8s.io/kubernetes/pkg/controller/endpoint"
@@ -61,7 +62,7 @@ func NewEndpointController(client *client.Client) *endpointController {
 			ListFunc: func() (runtime.Object, error) {
 				return e.client.Services(api.NamespaceAll).List(labels.Everything(), fields.Everything())
 			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 				return e.client.Services(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
 			},
 		},
@@ -81,7 +82,7 @@ func NewEndpointController(client *client.Client) *endpointController {
 			ListFunc: func() (runtime.Object, error) {
 				return e.client.Pods(api.NamespaceAll).List(labels.Everything(), fields.Everything())
 			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 				return e.client.Pods(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
 			},
 		},
@@ -426,7 +427,7 @@ func findPort(pod *api.Pod, svcPort *api.ServicePort) (int, int, error) {
 		// it actually maps to a host-port assigned to the pod. upstream
 		// doesn't check this and happily returns the container port spec'd
 		// in the service, but that doesn't align w/ mesos port mgmt.
-		p := portName.IntVal
+		p := portName.IntValue()
 		for _, container := range pod.Spec.Containers {
 			for _, port := range container.Ports {
 				if port.ContainerPort == p && port.Protocol == svcPort.Protocol {

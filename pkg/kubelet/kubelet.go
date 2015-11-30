@@ -20,6 +20,7 @@ package kubelet
 // contrib/mesos/pkg/executor/.
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -80,6 +81,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	"k8s.io/kubernetes/pkg/util/selinux"
 	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/util/yaml"
 	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/watch"
@@ -189,6 +191,8 @@ func NewMainKubelet(
 	imageGCPolicy ImageGCPolicy,
 	diskSpacePolicy DiskSpacePolicy,
 	cloud cloudprovider.Interface,
+	nodeLabels []string,
+	nodeLabelsFile string,
 	nodeStatusUpdateFrequency time.Duration,
 	resourceContainer string,
 	osInterface kubecontainer.OSInterface,
@@ -213,6 +217,7 @@ func NewMainKubelet(
 	oomAdjuster *oom.OOMAdjuster,
 	serializeImagePulls bool,
 	containerManager cm.ContainerManager,
+	flannelExperimentalOverlay bool,
 ) (*Kubelet, error) {
 
 	if rootDirectory == "" {
@@ -234,7 +239,7 @@ func NewMainKubelet(
 			ListFunc: func() (runtime.Object, error) {
 				return kubeClient.Services(api.NamespaceAll).List(labels.Everything(), fields.Everything())
 			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 				return kubeClient.Services(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
 			},
 		}
@@ -251,7 +256,7 @@ func NewMainKubelet(
 			ListFunc: func() (runtime.Object, error) {
 				return kubeClient.Nodes().List(labels.Everything(), fieldSelector)
 			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
 				return kubeClient.Nodes().Watch(labels.Everything(), fieldSelector, options)
 			},
 		}
@@ -304,6 +309,8 @@ func NewMainKubelet(
 		volumeManager:                  volumeManager,
 		cloud:                          cloud,
 		nodeRef:                        nodeRef,
+		nodeLabels:                     nodeLabels,
+		nodeLabelsFile:                 nodeLabelsFile,
 		nodeStatusUpdateFrequency:      nodeStatusUpdateFrequency,
 		resourceContainer:              resourceContainer,
 		os:                             osInterface,
@@ -321,8 +328,20 @@ func NewMainKubelet(
 		cpuCFSQuota:                    cpuCFSQuota,
 		daemonEndpoints:                daemonEndpoints,
 		containerManager:               containerManager,
+		flannelExperimentalOverlay:     flannelExperimentalOverlay,
+		flannelHelper:                  NewFlannelHelper(),
 	}
-
+	if klet.flannelExperimentalOverlay {
+		glog.Infof("Flannel is in charge of podCIDR and overlay networking.")
+	}
+	if klet.kubeClient == nil {
+		// The master kubelet cannot wait for the flannel daemon because it is responsible
+		// for starting up the flannel server in a static pod. So even though the flannel
+		// daemon runs on the master, it doesn't hold up cluster bootstrap. All the pods
+		// on the master run with host networking, so the master flannel doesn't care
+		// even if the network changes. We only need it for the master proxy.
+		klet.flannelExperimentalOverlay = false
+	}
 	if plug, err := network.InitNetworkPlugin(networkPlugins, networkPluginName, &networkHost{klet}); err != nil {
 		return nil, err
 	} else {
@@ -386,7 +405,6 @@ func NewMainKubelet(
 			return nil, err
 		}
 		klet.containerRuntime = rktRuntime
-		klet.imageManager = rkt.NewImageManager(rktRuntime)
 		klet.pleg = pleg.NewGenericPLEG(klet.containerRuntime, plegChannelCapacity, plegRelistPeriod)
 
 		// No Docker daemon to put in a container.
@@ -509,6 +527,12 @@ type Kubelet struct {
 	masterServiceNamespace string
 	serviceLister          serviceLister
 	nodeLister             nodeLister
+
+	// a list of node labels to register
+	nodeLabels []string
+
+	// the path to a yaml or json file container series of node labels
+	nodeLabelsFile string
 
 	// Last timestamp when runtime responded on ping.
 	// Mutex is used to protect this value.
@@ -637,6 +661,13 @@ type Kubelet struct {
 
 	// oneTimeInitializer is used to initialize modules that are dependent on the runtime to be up.
 	oneTimeInitializer sync.Once
+
+	flannelExperimentalOverlay bool
+
+	// TODO: Flannelhelper doesn't store any state, we can instantiate it
+	// on the fly if we're confident the dbus connetions it opens doesn't
+	// put the system under duress.
+	flannelHelper *FlannelHelper
 }
 
 func (kl *Kubelet) allSourcesReady() bool {
@@ -870,7 +901,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		glog.Warning("No api server defined - no node status update will be sent.")
 	}
 	if err := kl.initializeModules(); err != nil {
-		kl.recorder.Eventf(kl.nodeRef, kubecontainer.KubeletSetupFailed, err.Error())
+		kl.recorder.Eventf(kl.nodeRef, api.EventTypeWarning, kubecontainer.KubeletSetupFailed, err.Error())
 		glog.Error(err)
 		kl.runtimeState.setInitError(err)
 	}
@@ -903,6 +934,19 @@ func (kl *Kubelet) initialNodeStatus() (*api.Node, error) {
 			Unschedulable: !kl.registerSchedulable,
 		},
 	}
+
+	labels, err := kl.getNodeLabels()
+	if err != nil {
+		return nil, err
+	}
+	// @question: should this be place after the call to the cloud provider? which also applies labels
+	for k, v := range labels {
+		if cv, found := node.ObjectMeta.Labels[k]; found {
+			glog.Warningf("the node label %s=%s will overwrite default setting %s", k, v, cv)
+		}
+		node.ObjectMeta.Labels[k] = v
+	}
+
 	if kl.cloud != nil {
 		instances, ok := kl.cloud.Instances()
 		if !ok {
@@ -949,6 +993,80 @@ func (kl *Kubelet) initialNodeStatus() (*api.Node, error) {
 		return nil, err
 	}
 	return node, nil
+}
+
+// getNodeLabels is just a wrapper method for the two below, not to duplicate above
+func (kl *Kubelet) getNodeLabels() (map[string]string, error) {
+	var err error
+	labels := make(map[string]string, 0)
+
+	if kl.nodeLabelsFile != "" {
+		labels, err = kl.retrieveNodeLabelsFile(kl.nodeLabelsFile)
+		if err != nil {
+			return labels, err
+		}
+	}
+	// step: apply the command line label - permitted to override those from file
+	if len(kl.nodeLabels) > 0 {
+		nl, err := kl.retrieveNodeLabels(kl.nodeLabels)
+		if err != nil {
+			return labels, err
+		}
+		for k, v := range nl {
+			if vl, found := labels[k]; found {
+				glog.Warningf("the --node-label %s=%s option will overwrite %s from node-labels-file", k, v, vl)
+			}
+			labels[k] = v
+		}
+	}
+
+	return labels, nil
+}
+
+// retrieveNodeLabels extracts the node labels specified on the command line
+func (kl *Kubelet) retrieveNodeLabels(labels []string) (map[string]string, error) {
+	nodeLabels := make(map[string]string, 0)
+
+	for _, label := range labels {
+		items := strings.Split(label, "=")
+		if len(items) != 2 {
+			return nodeLabels, fmt.Errorf("--node-label %s, should be in the form key=pair", label)
+		}
+		nodeLabels[strings.TrimSpace(items[0])] = strings.TrimSpace(items[1])
+	}
+
+	return nodeLabels, nil
+}
+
+// retrieveNodeLabelsFile reads in and parses the yaml or json node labels file
+func (kl *Kubelet) retrieveNodeLabelsFile(path string) (map[string]string, error) {
+	labels := make(map[string]string, 0)
+	kps := make(map[string]interface{}, 0)
+
+	fd, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+
+	err = yaml.NewYAMLOrJSONDecoder(bufio.NewReader(fd), 12).Decode(&kps)
+	if err != nil {
+		return nil, fmt.Errorf("the --node-labels-file %s content is invalid, %s", path, err)
+	}
+
+	for k, v := range kps {
+		// we ONLY accept key=value pairs, no complex types
+		switch v.(type) {
+		case string:
+			labels[k] = v.(string)
+		case float64:
+			labels[k] = fmt.Sprintf("%d", v.(float64))
+		default:
+			return nil, fmt.Errorf("--node-labels-file only supports key:string, not complex values e.g arrays, maps")
+		}
+	}
+
+	return labels, nil
 }
 
 // registerWithApiserver registers the node with the cluster master. It is safe
@@ -1536,7 +1654,7 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, runningPod kubecont
 	// Mount volumes.
 	podVolumes, err := kl.mountExternalVolumes(pod)
 	if err != nil {
-		kl.recorder.Eventf(ref, kubecontainer.FailedMountVolume, "Unable to mount volumes for pod %q: %v", podFullName, err)
+		kl.recorder.Eventf(ref, api.EventTypeWarning, kubecontainer.FailedMountVolume, "Unable to mount volumes for pod %q: %v", podFullName, err)
 		glog.Errorf("Unable to mount volumes for pod %q: %v; skipping pod", podFullName, err)
 		return err
 	}
@@ -1601,7 +1719,7 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, runningPod kubecont
 	}
 	if egress != nil || ingress != nil {
 		if podUsesHostNetwork(pod) {
-			kl.recorder.Event(pod, kubecontainer.HostNetworkNotSupported, "Bandwidth shaping is not currently supported on the host network")
+			kl.recorder.Event(pod, api.EventTypeWarning, kubecontainer.HostNetworkNotSupported, "Bandwidth shaping is not currently supported on the host network")
 		} else if kl.shaper != nil {
 			status, found := kl.statusManager.GetPodStatus(pod.UID)
 			if !found {
@@ -1616,7 +1734,7 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, runningPod kubecont
 				err = kl.shaper.ReconcileCIDR(fmt.Sprintf("%s/32", status.PodIP), egress, ingress)
 			}
 		} else {
-			kl.recorder.Event(pod, kubecontainer.UndefinedShaper, "Pod requests bandwidth shaping, but the shaper is undefined")
+			kl.recorder.Event(pod, api.EventTypeWarning, kubecontainer.UndefinedShaper, "Pod requests bandwidth shaping, but the shaper is undefined")
 		}
 	}
 
@@ -2106,7 +2224,7 @@ func (kl *Kubelet) matchesNodeSelector(pod *api.Pod) bool {
 }
 
 func (kl *Kubelet) rejectPod(pod *api.Pod, reason, message string) {
-	kl.recorder.Eventf(pod, reason, message)
+	kl.recorder.Eventf(pod, api.EventTypeWarning, reason, message)
 	kl.statusManager.SetPodStatus(pod, api.PodStatus{
 		Phase:   api.PodFailed,
 		Reason:  reason,
@@ -2507,11 +2625,11 @@ func (kl *Kubelet) updateNodeStatus() error {
 	return fmt.Errorf("update node status exceeds retry count")
 }
 
-func (kl *Kubelet) recordNodeStatusEvent(event string) {
+func (kl *Kubelet) recordNodeStatusEvent(eventtype, event string) {
 	glog.V(2).Infof("Recording %s event message for node %s", event, kl.nodeName)
 	// TODO: This requires a transaction, either both node status is updated
 	// and event is recorded or neither should happen, see issue #6055.
-	kl.recorder.Eventf(kl.nodeRef, event, "Node %s status is now: %s", kl.nodeName, event)
+	kl.recorder.Eventf(kl.nodeRef, eventtype, event, "Node %s status is now: %s", kl.nodeName, event)
 }
 
 // Maintains Node.Spec.Unschedulable value from previous run of tryUpdateNodeStatus()
@@ -2520,6 +2638,16 @@ var oldNodeUnschedulable bool
 func (kl *Kubelet) syncNetworkStatus() {
 	var err error
 	if kl.configureCBR0 {
+		if kl.flannelExperimentalOverlay {
+			podCIDR, err := kl.flannelHelper.Handshake()
+			if err != nil {
+				glog.Infof("Flannel server handshake failed %v", err)
+				return
+			}
+			glog.Infof("Setting cidr: %v -> %v",
+				kl.runtimeState.podCIDR(), podCIDR)
+			kl.runtimeState.setPodCIDR(podCIDR)
+		}
 		if err := ensureIPTablesMasqRule(); err != nil {
 			err = fmt.Errorf("Error on adding ip table rules: %v", err)
 			glog.Error(err)
@@ -2622,7 +2750,7 @@ func (kl *Kubelet) setNodeStatus(node *api.Node) error {
 			node.Status.NodeInfo.BootID != info.BootID {
 			// TODO: This requires a transaction, either both node status is updated
 			// and event is recorded or neither should happen, see issue #6055.
-			kl.recorder.Eventf(kl.nodeRef, kubecontainer.NodeRebooted,
+			kl.recorder.Eventf(kl.nodeRef, api.EventTypeWarning, kubecontainer.NodeRebooted,
 				"Node %s has been rebooted, boot id: %s", kl.nodeName, info.BootID)
 		}
 		node.Status.NodeInfo.BootID = info.BootID
@@ -2644,6 +2772,63 @@ func (kl *Kubelet) setNodeStatus(node *api.Node) error {
 	node.Status.DaemonEndpoints = *kl.daemonEndpoints
 
 	currentTime := unversioned.Now()
+	var nodeOODCondition *api.NodeCondition
+
+	// Check if NodeOutOfDisk condition already exists and if it does, just pick it up for update.
+	for i := range node.Status.Conditions {
+		if node.Status.Conditions[i].Type == api.NodeOutOfDisk {
+			nodeOODCondition = &node.Status.Conditions[i]
+		}
+	}
+
+	newOODCondition := false
+	// If the NodeOutOfDisk condition doesn't exist, create one.
+	if nodeOODCondition == nil {
+		nodeOODCondition = &api.NodeCondition{
+			Type:               api.NodeOutOfDisk,
+			Status:             api.ConditionUnknown,
+			LastTransitionTime: currentTime,
+		}
+		// nodeOODCondition cannot be appended to node.Status.Conditions here because it gets
+		// copied to the slice. So if we append nodeOODCondition to the slice here none of the
+		// updates we make to nodeOODCondition below are reflected in the slice.
+		newOODCondition = true
+	}
+
+	// Update the heartbeat time irrespective of all the conditions.
+	nodeOODCondition.LastHeartbeatTime = currentTime
+
+	// Note: The conditions below take care of the case when a new NodeOutOfDisk condition is
+	// created and as well as the case when the condition already exists. When a new condition
+	// is created its status is set to api.ConditionUnknown which matches either
+	// nodeOODCondition.Status != api.ConditionTrue or
+	// nodeOODCondition.Status != api.ConditionFalse in the conditions below depending on whether
+	// the kubelet is out of disk or not.
+	if kl.isOutOfDisk() {
+		if nodeOODCondition.Status != api.ConditionTrue {
+			nodeOODCondition.Status = api.ConditionTrue
+			nodeOODCondition.Reason = "KubeletOutOfDisk"
+			nodeOODCondition.Message = "out of disk space"
+			nodeOODCondition.LastTransitionTime = currentTime
+			kl.recordNodeStatusEvent(api.EventTypeNormal, "NodeOutOfDisk")
+		}
+	} else {
+		if nodeOODCondition.Status != api.ConditionFalse {
+			nodeOODCondition.Status = api.ConditionFalse
+			nodeOODCondition.Reason = "KubeletHasSufficientDisk"
+			nodeOODCondition.Message = "kubelet has sufficient disk space available"
+			nodeOODCondition.LastTransitionTime = currentTime
+			kl.recordNodeStatusEvent(api.EventTypeNormal, "NodeHasSufficientDisk")
+		}
+	}
+
+	if newOODCondition {
+		node.Status.Conditions = append(node.Status.Conditions, *nodeOODCondition)
+	}
+
+	// NOTE(aaronlevy): NodeReady condition needs to be the last in the list of node conditions.
+	// This is due to an issue with version skewed kubelet and master components.
+	// ref: https://github.com/kubernetes/kubernetes/issues/16961
 	var newNodeReadyCondition api.NodeCondition
 	var oldNodeReadyConditionStatus api.ConditionStatus
 	if rs := kl.runtimeState.errors(); len(rs) == 0 {
@@ -2684,71 +2869,17 @@ func (kl *Kubelet) setNodeStatus(node *api.Node) error {
 	}
 	if !updated || oldNodeReadyConditionStatus != newNodeReadyCondition.Status {
 		if newNodeReadyCondition.Status == api.ConditionTrue {
-			kl.recordNodeStatusEvent(kubecontainer.NodeReady)
+			kl.recordNodeStatusEvent(api.EventTypeNormal, kubecontainer.NodeReady)
 		} else {
-			kl.recordNodeStatusEvent(kubecontainer.NodeNotReady)
+			kl.recordNodeStatusEvent(api.EventTypeNormal, kubecontainer.NodeNotReady)
 		}
-	}
-
-	var nodeOODCondition *api.NodeCondition
-
-	// Check if NodeOutOfDisk condition already exists and if it does, just pick it up for update.
-	for i := range node.Status.Conditions {
-		if node.Status.Conditions[i].Type == api.NodeOutOfDisk {
-			nodeOODCondition = &node.Status.Conditions[i]
-		}
-	}
-
-	newOODCondition := false
-	// If the NodeOutOfDisk condition doesn't exist, create one.
-	if nodeOODCondition == nil {
-		nodeOODCondition = &api.NodeCondition{
-			Type:               api.NodeOutOfDisk,
-			Status:             api.ConditionUnknown,
-			LastTransitionTime: currentTime,
-		}
-		// nodeOODCondition cannot be appended to node.Status.Conditions here because it gets
-		// copied to the slice. So if we append nodeOODCondition to the slice here none of the
-		// updates we make to nodeOODCondition below are reflected in the slice.
-		newOODCondition = true
-	}
-
-	// Update the heartbeat time irrespective of all the conditions.
-	nodeOODCondition.LastHeartbeatTime = currentTime
-
-	// Note: The conditions below take care of the case when a new NodeOutOfDisk condition is
-	// created and as well as the case when the condition already exists. When a new condition
-	// is created its status is set to api.ConditionUnknown which matches either
-	// nodeOODCondition.Status != api.ConditionTrue or
-	// nodeOODCondition.Status != api.ConditionFalse in the conditions below depending on whether
-	// the kubelet is out of disk or not.
-	if kl.isOutOfDisk() {
-		if nodeOODCondition.Status != api.ConditionTrue {
-			nodeOODCondition.Status = api.ConditionTrue
-			nodeOODCondition.Reason = "KubeletOutOfDisk"
-			nodeOODCondition.Message = "out of disk space"
-			nodeOODCondition.LastTransitionTime = currentTime
-			kl.recordNodeStatusEvent("NodeOutOfDisk")
-		}
-	} else {
-		if nodeOODCondition.Status != api.ConditionFalse {
-			nodeOODCondition.Status = api.ConditionFalse
-			nodeOODCondition.Reason = "KubeletHasSufficientDisk"
-			nodeOODCondition.Message = "kubelet has sufficient disk space available"
-			nodeOODCondition.LastTransitionTime = currentTime
-			kl.recordNodeStatusEvent("NodeHasSufficientDisk")
-		}
-	}
-
-	if newOODCondition {
-		node.Status.Conditions = append(node.Status.Conditions, *nodeOODCondition)
 	}
 
 	if oldNodeUnschedulable != node.Spec.Unschedulable {
 		if node.Spec.Unschedulable {
-			kl.recordNodeStatusEvent(kubecontainer.NodeNotSchedulable)
+			kl.recordNodeStatusEvent(api.EventTypeNormal, kubecontainer.NodeNotSchedulable)
 		} else {
-			kl.recordNodeStatusEvent(kubecontainer.NodeSchedulable)
+			kl.recordNodeStatusEvent(api.EventTypeNormal, kubecontainer.NodeSchedulable)
 		}
 		oldNodeUnschedulable = node.Spec.Unschedulable
 	}
@@ -2785,7 +2916,22 @@ func (kl *Kubelet) tryUpdateNodeStatus() error {
 	if node == nil {
 		return fmt.Errorf("no node instance returned for %q", kl.nodeName)
 	}
-	if kl.reconcileCIDR {
+	// Flannel is the authoritative source of pod CIDR, if it's running.
+	// This is a short term compromise till we get flannel working in
+	// reservation mode.
+	if kl.flannelExperimentalOverlay {
+		flannelPodCIDR := kl.runtimeState.podCIDR()
+		if node.Spec.PodCIDR != flannelPodCIDR {
+			node.Spec.PodCIDR = flannelPodCIDR
+			glog.Infof("Updating podcidr to %v", node.Spec.PodCIDR)
+			if updatedNode, err := kl.kubeClient.Nodes().Update(node); err != nil {
+				glog.Warningf("Failed to update podCIDR: %v", err)
+			} else {
+				// Update the node resourceVersion so the status update doesn't fail.
+				node = updatedNode
+			}
+		}
+	} else if kl.reconcileCIDR {
 		kl.runtimeState.setPodCIDR(node.Spec.PodCIDR)
 	}
 
@@ -2933,7 +3079,7 @@ func (kl *Kubelet) generatePodStatus(pod *api.Pod) (api.PodStatus, error) {
 	// TODO: Consider include the container information.
 	if kl.pastActiveDeadline(pod) {
 		reason := "DeadlineExceeded"
-		kl.recorder.Eventf(pod, reason, "Pod was active on the node longer than specified deadline")
+		kl.recorder.Eventf(pod, api.EventTypeNormal, reason, "Pod was active on the node longer than specified deadline")
 		return api.PodStatus{
 			Phase:   api.PodFailed,
 			Reason:  reason,
@@ -3058,7 +3204,7 @@ func (kl *Kubelet) PortForward(podFullName string, podUID types.UID, port uint16
 // BirthCry sends an event that the kubelet has started up.
 func (kl *Kubelet) BirthCry() {
 	// Make an event that kubelet restarted.
-	kl.recorder.Eventf(kl.nodeRef, kubecontainer.StartingKubelet, "Starting kubelet.")
+	kl.recorder.Eventf(kl.nodeRef, api.EventTypeNormal, kubecontainer.StartingKubelet, "Starting kubelet.")
 }
 
 func (kl *Kubelet) StreamingConnectionIdleTimeout() time.Duration {
