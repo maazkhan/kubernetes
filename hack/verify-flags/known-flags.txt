@@ -1,7 +1,6 @@
 
 accept-hosts
 accept-paths
-account-for-pod-resources
 admission-control
 admission-control-config-file
 advertise-address
@@ -47,6 +46,7 @@ cluster-domain
 cluster-name
 cluster-tag
 concurrent-endpoint-syncs
+concurrent-resource-quota-syncs
 config-sync-period
 configure-cbr0
 container-port
@@ -109,6 +109,7 @@ from-file
 from-literal
 func-dest
 fuzz-iters
+gather-logs-sizes
 gather-resource-usage
 gce-project
 gce-service-account
@@ -197,8 +198,8 @@ mesos-executor-cpus
 mesos-executor-mem
 mesos-launch-grace-period
 mesos-master
-mesos-role
 mesos-sandbox-overlay
+mesos-roles
 mesos-user
 minimum-container-ttl-duration
 minion-max-log-age
@@ -329,6 +330,7 @@ update-period
 upgrade-target
 use-kubernetes-cluster-service
 user-whitelist
+verify-only
 watch-cache
 watch-only
 whitelist-override-label

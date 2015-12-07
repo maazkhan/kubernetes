@@ -70,6 +70,39 @@ func extractLatencyMetrics(latencies []podLatencyData) LatencyMetric {
 	return LatencyMetric{Perc50: perc50, Perc90: perc90, Perc99: perc99}
 }
 
+func density30AddonResourceVerifier() map[string]resourceConstraint {
+	constraints := make(map[string]resourceConstraint)
+	constraints["fluentd-elasticsearch"] = resourceConstraint{
+		cpuConstraint:    0.1,
+		memoryConstraint: 150 * (1024 * 1024),
+	}
+	constraints["elasticsearch-logging"] = resourceConstraint{
+		cpuConstraint:    2,
+		memoryConstraint: 750 * (1024 * 1024),
+	}
+	constraints["heapster"] = resourceConstraint{
+		cpuConstraint:    2,
+		memoryConstraint: 1800 * (1024 * 1024),
+	}
+	constraints["kibana-logging"] = resourceConstraint{
+		cpuConstraint:    0.05,
+		memoryConstraint: 100 * (1024 * 1024),
+	}
+	constraints["kube-proxy"] = resourceConstraint{
+		cpuConstraint:    0.05,
+		memoryConstraint: 20 * (1024 * 1024),
+	}
+	constraints["l7-lb-controller"] = resourceConstraint{
+		cpuConstraint:    0.02,
+		memoryConstraint: 20 * (1024 * 1024),
+	}
+	constraints["influxdb"] = resourceConstraint{
+		cpuConstraint:    2,
+		memoryConstraint: 300 * (1024 * 1024),
+	}
+	return constraints
+}
+
 // This test suite can take a long time to run, and can affect or be affected by other tests.
 // So by default it is added to the ginkgo.skip list (see driver.go).
 // To run this suite you must explicitly ask for it by setting the
@@ -81,9 +114,6 @@ var _ = Describe("Density [Skipped]", func() {
 	var additionalPodsPrefix string
 	var ns string
 	var uuid string
-
-	framework := NewFramework("density")
-	framework.NamespaceDeletionTimeout = time.Hour
 
 	// Gathers data prior to framework namespace teardown
 	AfterEach(func() {
@@ -118,12 +148,17 @@ var _ = Describe("Density [Skipped]", func() {
 		expectNoError(VerifySchedulerLatency())
 	})
 
+	// Explicitly put here, to delete namespace at the end of the test
+	// (after measuring latency metrics, etc.).
+	framework := NewFramework("density")
+	framework.NamespaceDeletionTimeout = time.Hour
+
 	BeforeEach(func() {
 		c = framework.Client
 		ns = framework.Namespace.Name
 		var err error
 
-		nodes, err := c.Nodes().List(labels.Everything(), fields.Everything())
+		nodes, err := c.Nodes().List(unversioned.ListOptions{})
 		expectNoError(err)
 		nodeCount = len(nodes.Items)
 		Expect(nodeCount).NotTo(BeZero())
@@ -177,6 +212,7 @@ var _ = Describe("Density [Skipped]", func() {
 		name := fmt.Sprintf("should allow starting %d pods per node", testArg.podsPerNode)
 		if testArg.podsPerNode == 30 {
 			name = "[Performance] " + name
+			framework.addonResourceConstraints = density30AddonResourceVerifier()
 		}
 		itArg := testArg
 		It(name, func() {
@@ -200,10 +236,10 @@ var _ = Describe("Density [Skipped]", func() {
 			_, controller := controllerframework.NewInformer(
 				&cache.ListWatch{
 					ListFunc: func() (runtime.Object, error) {
-						return c.Events(ns).List(labels.Everything(), fields.Everything())
+						return c.Events(ns).List(unversioned.ListOptions{})
 					},
 					WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-						return c.Events(ns).Watch(labels.Everything(), fields.Everything(), options)
+						return c.Events(ns).Watch(options)
 					},
 				},
 				&api.Event{},
@@ -283,10 +319,13 @@ var _ = Describe("Density [Skipped]", func() {
 				_, controller := controllerframework.NewInformer(
 					&cache.ListWatch{
 						ListFunc: func() (runtime.Object, error) {
-							return c.Pods(ns).List(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything())
+							selector := labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix})
+							options := unversioned.ListOptions{LabelSelector: unversioned.LabelSelector{selector}}
+							return c.Pods(ns).List(options)
 						},
 						WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-							return c.Pods(ns).Watch(labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix}), fields.Everything(), options)
+							options.LabelSelector.Selector = labels.SelectorFromSet(labels.Set{"name": additionalPodsPrefix})
+							return c.Pods(ns).Watch(options)
 						},
 					},
 					&api.Pod{},
@@ -329,13 +368,13 @@ var _ = Describe("Density [Skipped]", func() {
 				}
 				close(stopCh)
 
-				schedEvents, err := c.Events(ns).List(
-					labels.Everything(),
-					fields.Set{
-						"involvedObject.kind":      "Pod",
-						"involvedObject.namespace": ns,
-						"source":                   "scheduler",
-					}.AsSelector())
+				selector := fields.Set{
+					"involvedObject.kind":      "Pod",
+					"involvedObject.namespace": ns,
+					"source":                   "scheduler",
+				}.AsSelector()
+				options := unversioned.ListOptions{FieldSelector: unversioned.FieldSelector{selector}}
+				schedEvents, err := c.Events(ns).List(options)
 				expectNoError(err)
 				for k := range createTimes {
 					for _, event := range schedEvents.Items {
@@ -417,6 +456,7 @@ func createRunningPod(wg *sync.WaitGroup, c *client.Client, name, ns, image stri
 					Image: image,
 				},
 			},
+			DNSPolicy: api.DNSDefault,
 		},
 	}
 	_, err := c.Pods(ns).Create(pod)

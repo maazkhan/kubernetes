@@ -25,7 +25,6 @@ import (
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 
@@ -110,10 +109,12 @@ func (c *realRecyclerClient) WatchPod(name, namespace, resourceVersion string, s
 
 	podLW := &cache.ListWatch{
 		ListFunc: func() (runtime.Object, error) {
-			return c.client.Pods(namespace).List(labels.Everything(), fieldSelector)
+			options := unversioned.ListOptions{FieldSelector: unversioned.FieldSelector{fieldSelector}}
+			return c.client.Pods(namespace).List(options)
 		},
 		WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-			return c.client.Pods(namespace).Watch(labels.Everything(), fieldSelector, options)
+			options.FieldSelector.Selector = fieldSelector
+			return c.client.Pods(namespace).Watch(options)
 		},
 	}
 	queue := cache.NewFIFO(cache.MetaNamespaceKeyFunc)

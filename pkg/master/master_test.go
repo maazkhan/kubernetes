@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -32,14 +31,13 @@ import (
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/latest"
-	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	apiutil "k8s.io/kubernetes/pkg/api/util"
 	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apiserver"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/kubelet/client"
 	"k8s.io/kubernetes/pkg/registry/endpoint"
 	"k8s.io/kubernetes/pkg/registry/namespace"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
@@ -123,23 +121,6 @@ func TestNew(t *testing.T) {
 	assert.Equal(masterDialerFunc, configDialerFunc)
 
 	assert.Equal(master.proxyTransport.(*http.Transport).TLSClientConfig, config.ProxyTLSClientConfig)
-}
-
-// TestNewEtcdStorage verifies that the usage of NewEtcdStorage reacts properly when
-// the correct data is input
-func TestNewEtcdStorage(t *testing.T) {
-	etcdserver := etcdtesting.NewEtcdTestClientServer(t)
-	defer etcdserver.Terminate(t)
-
-	assert := assert.New(t)
-	// Pass case
-	_, err := NewEtcdStorage(etcdserver.Client, latest.GroupOrDie("").InterfacesFor, testapi.Default.Version(), etcdtest.PathPrefix())
-	assert.NoError(err, "Unable to create etcdstorage: %s", err)
-
-	// Fail case
-	errorFunc := func(apiVersion string) (*meta.VersionInterfaces, error) { return nil, errors.New("ERROR") }
-	_, err = NewEtcdStorage(etcdserver.Client, errorFunc, testapi.Default.Version(), etcdtest.PathPrefix())
-	assert.Error(err, "NewEtcdStorage should have failed")
 }
 
 // TestGetServersToValidate verifies the unexported getServersToValidate function
@@ -355,7 +336,7 @@ func TestExpapi(t *testing.T) {
 	assert.Equal(expAPIGroup.Mapper, extensionsGroupMeta.RESTMapper)
 	assert.Equal(expAPIGroup.Codec, extensionsGroupMeta.Codec)
 	assert.Equal(expAPIGroup.Linker, extensionsGroupMeta.SelfLinker)
-	assert.Equal(expAPIGroup.GroupVersion, unversioned.GroupVersion{Group: extensionsGroupMeta.Group, Version: extensionsGroupMeta.Version})
+	assert.Equal(expAPIGroup.GroupVersion, extensionsGroupMeta.GroupVersion)
 }
 
 // TestGetNodeAddresses verifies that proper results are returned

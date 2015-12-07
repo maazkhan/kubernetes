@@ -27,7 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/record"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
-	kubeletutil "k8s.io/kubernetes/pkg/kubelet/util"
+	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/util/config"
 	"k8s.io/kubernetes/pkg/util/sets"
 	utilvalidation "k8s.io/kubernetes/pkg/util/validation"
@@ -317,7 +317,8 @@ func filterInvalidPods(pods []*api.Pod, source string, recorder record.EventReco
 		} else {
 			name := kubecontainer.GetPodFullName(pod)
 			if names.Has(name) {
-				errlist = append(errlist, utilvalidation.NewDuplicateError("name", pod.Name))
+				//FIXME: this implies an API version
+				errlist = append(errlist, utilvalidation.NewDuplicateError(utilvalidation.NewFieldPath("metadata", "name"), pod.Name))
 			} else {
 				names.Insert(name)
 			}
@@ -379,7 +380,7 @@ func isAnnotationMapEqual(existingMap, candidateMap map[string]string) bool {
 
 // recordFirstSeenTime records the first seen time of this pod.
 func recordFirstSeenTime(pod *api.Pod) {
-	glog.V(4).Infof("Receiving a new pod %q", kubeletutil.FormatPodName(pod))
+	glog.V(4).Infof("Receiving a new pod %q", format.Pod(pod))
 	pod.Annotations[kubetypes.ConfigFirstSeenAnnotationKey] = kubetypes.NewTimestamp().GetString()
 }
 

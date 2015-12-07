@@ -30,7 +30,6 @@ import (
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/framework"
-	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util"
@@ -109,10 +108,10 @@ func NewReplicationManager(kubeClient client.Interface, resyncPeriod controller.
 	rm.rcStore.Store, rm.rcController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return rm.kubeClient.ReplicationControllers(api.NamespaceAll).List(labels.Everything(), fields.Everything())
+				return rm.kubeClient.ReplicationControllers(api.NamespaceAll).List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return rm.kubeClient.ReplicationControllers(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
+				return rm.kubeClient.ReplicationControllers(api.NamespaceAll).Watch(options)
 			},
 		},
 		&api.ReplicationController{},
@@ -150,10 +149,10 @@ func NewReplicationManager(kubeClient client.Interface, resyncPeriod controller.
 	rm.podStore.Store, rm.podController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return rm.kubeClient.Pods(api.NamespaceAll).List(labels.Everything(), fields.Everything())
+				return rm.kubeClient.Pods(api.NamespaceAll).List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return rm.kubeClient.Pods(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
+				return rm.kubeClient.Pods(api.NamespaceAll).Watch(options)
 			},
 		},
 		&api.Pod{},

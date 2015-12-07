@@ -29,6 +29,11 @@ func Kind(kind string) unversioned.GroupKind {
 	return SchemeGroupVersion.WithKind(kind).GroupKind()
 }
 
+// Resource takes an unqualified resource and returns back a Group qualified GroupResource
+func Resource(resource string) unversioned.GroupResource {
+	return SchemeGroupVersion.WithResource(resource).GroupResource()
+}
+
 func init() {
 	// Register the API.
 	addKnownTypes()
@@ -57,6 +62,10 @@ func addKnownTypes() {
 		&Ingress{},
 		&IngressList{},
 	)
+
+	// Register Unversioned types
+	// TODO this should not be done here
+	api.Scheme.AddKnownTypes(SchemeGroupVersion, &unversioned.ListOptions{})
 }
 
 func (*ClusterAutoscaler) IsAnAPIObject()           {}

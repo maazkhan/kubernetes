@@ -31,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
@@ -207,7 +208,7 @@ func validateFields(a, b string) bool {
 
 func body(t *testing.T, obj runtime.Object, raw *string) *string {
 	if obj != nil {
-		_, kind, err := api.Scheme.ObjectVersionAndKind(obj)
+		fqKind, err := api.Scheme.ObjectKind(obj)
 		if err != nil {
 			t.Errorf("unexpected encoding error: %v", err)
 		}
@@ -216,18 +217,18 @@ func body(t *testing.T, obj runtime.Object, raw *string) *string {
 		// split the schemes for internal objects.
 		// TODO: caesarxuchao: we should add a map from kind to group in Scheme.
 		var bs []byte
-		if api.Scheme.Recognizes(testapi.Default.GroupAndVersion(), kind) {
+		if api.Scheme.Recognizes(testapi.Default.GroupVersion().WithKind(fqKind.Kind)) {
 			bs, err = testapi.Default.Codec().Encode(obj)
 			if err != nil {
 				t.Errorf("unexpected encoding error: %v", err)
 			}
-		} else if api.Scheme.Recognizes(testapi.Extensions.GroupAndVersion(), kind) {
+		} else if api.Scheme.Recognizes(testapi.Extensions.GroupVersion().WithKind(fqKind.Kind)) {
 			bs, err = testapi.Extensions.Codec().Encode(obj)
 			if err != nil {
 				t.Errorf("unexpected encoding error: %v", err)
 			}
 		} else {
-			t.Errorf("unexpected kind: %v", kind)
+			t.Errorf("unexpected kind: %v", fqKind.Kind)
 		}
 		body := string(bs)
 		return &body
@@ -496,7 +497,7 @@ func TestGetSwaggerSchema(t *testing.T) {
 	}
 
 	client := NewOrDie(&Config{Host: server.URL})
-	got, err := client.SwaggerSchema("v1")
+	got, err := client.SwaggerSchema(v1.SchemeGroupVersion)
 	if err != nil {
 		t.Fatalf("unexpected encoding error: %v", err)
 	}
@@ -506,7 +507,7 @@ func TestGetSwaggerSchema(t *testing.T) {
 }
 
 func TestGetSwaggerSchemaFail(t *testing.T) {
-	expErr := "API version: v4 is not supported by the server. Use one of: [v1 v2 v3]"
+	expErr := "API version: api.group/v4 is not supported by the server. Use one of: [v1 v2 v3]"
 
 	server, err := swaggerSchemaFakeServer()
 	if err != nil {
@@ -514,7 +515,7 @@ func TestGetSwaggerSchemaFail(t *testing.T) {
 	}
 
 	client := NewOrDie(&Config{Host: server.URL})
-	got, err := client.SwaggerSchema("v4")
+	got, err := client.SwaggerSchema(unversioned.GroupVersion{Group: "api.group", Version: "v4"})
 	if got != nil {
 		t.Fatalf("unexpected response: %v", got)
 	}

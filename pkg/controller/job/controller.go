@@ -32,8 +32,6 @@ import (
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/framework"
 	replicationcontroller "k8s.io/kubernetes/pkg/controller/replication"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/workqueue"
@@ -86,10 +84,10 @@ func NewJobController(kubeClient client.Interface, resyncPeriod controller.Resyn
 	jm.jobStore.Store, jm.jobController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return jm.kubeClient.Extensions().Jobs(api.NamespaceAll).List(labels.Everything(), fields.Everything())
+				return jm.kubeClient.Extensions().Jobs(api.NamespaceAll).List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return jm.kubeClient.Extensions().Jobs(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
+				return jm.kubeClient.Extensions().Jobs(api.NamespaceAll).Watch(options)
 			},
 		},
 		&extensions.Job{},
@@ -109,10 +107,10 @@ func NewJobController(kubeClient client.Interface, resyncPeriod controller.Resyn
 	jm.podStore.Store, jm.podController = framework.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return jm.kubeClient.Pods(api.NamespaceAll).List(labels.Everything(), fields.Everything())
+				return jm.kubeClient.Pods(api.NamespaceAll).List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return jm.kubeClient.Pods(api.NamespaceAll).Watch(labels.Everything(), fields.Everything(), options)
+				return jm.kubeClient.Pods(api.NamespaceAll).Watch(options)
 			},
 		},
 		&api.Pod{},
@@ -313,7 +311,7 @@ func (jm *JobController) syncJob(key string) error {
 		return err
 	}
 	jobNeedsSync := jm.expectations.SatisfiedExpectations(jobKey)
-	selector, _ := extensions.PodSelectorAsSelector(job.Spec.Selector)
+	selector, _ := extensions.LabelSelectorAsSelector(job.Spec.Selector)
 	podList, err := jm.podStore.Pods(job.Namespace).List(selector)
 	if err != nil {
 		glog.Errorf("Error getting pods for job %q: %v", key, err)

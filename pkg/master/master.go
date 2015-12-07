@@ -31,7 +31,6 @@ import (
 	"k8s.io/kubernetes/pkg/admission"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/latest"
-	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/rest"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	apiutil "k8s.io/kubernetes/pkg/api/util"
@@ -41,8 +40,8 @@ import (
 	"k8s.io/kubernetes/pkg/auth/authenticator"
 	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/auth/handlers"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/healthz"
+	kubeletclient "k8s.io/kubernetes/pkg/kubelet/client"
 	"k8s.io/kubernetes/pkg/master/ports"
 	"k8s.io/kubernetes/pkg/registry/componentstatus"
 	controlleretcd "k8s.io/kubernetes/pkg/registry/controller/etcd"
@@ -75,9 +74,7 @@ import (
 	"k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata"
 	thirdpartyresourcedataetcd "k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata/etcd"
 	"k8s.io/kubernetes/pkg/storage"
-	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
 	etcdutil "k8s.io/kubernetes/pkg/storage/etcd/util"
-	"k8s.io/kubernetes/pkg/tools"
 	"k8s.io/kubernetes/pkg/ui"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/sets"
@@ -182,7 +179,7 @@ type Config struct {
 	// StorageVersions is a map between groups and their storage versions
 	StorageVersions map[string]string
 	EventTTL        time.Duration
-	KubeletClient   client.KubeletClient
+	KubeletClient   kubeletclient.KubeletClient
 	// allow downstream consumers to disable the core controller loops
 	EnableCoreControllers bool
 	EnableLogsSupport     bool
@@ -347,16 +344,6 @@ type Master struct {
 	// protects the map
 	thirdPartyResourcesLock   sync.RWMutex
 	KubernetesServiceNodePort int
-}
-
-// NewEtcdStorage returns a storage.Interface for the provided arguments or an error if the version
-// is incorrect.
-func NewEtcdStorage(client tools.EtcdClient, interfacesFunc meta.VersionInterfacesFunc, version, prefix string) (etcdStorage storage.Interface, err error) {
-	versionInterfaces, err := interfacesFunc(version)
-	if err != nil {
-		return etcdStorage, err
-	}
-	return etcdstorage.NewEtcdStorage(client, versionInterfaces.Codec, prefix), nil
 }
 
 // setDefaults fills in any fields not set that are required to have valid data.
@@ -533,7 +520,6 @@ func (m *Master) init(c *Config) {
 
 	storageDecorator := c.storageDecorator()
 	dbClient := func(resource string) storage.Interface { return c.StorageDestinations.get("", resource) }
-	podStorage := podetcd.NewStorage(dbClient("pods"), storageDecorator, c.KubeletClient, m.proxyTransport)
 
 	podTemplateStorage := podtemplateetcd.NewREST(dbClient("podTemplates"), storageDecorator)
 
@@ -554,6 +540,13 @@ func (m *Master) init(c *Config) {
 
 	nodeStorage, nodeStatusStorage := nodeetcd.NewREST(dbClient("nodes"), storageDecorator, c.KubeletClient, m.proxyTransport)
 	m.nodeRegistry = node.NewRegistry(nodeStorage)
+
+	podStorage := podetcd.NewStorage(
+		dbClient("pods"),
+		storageDecorator,
+		kubeletclient.ConnectionInfoGetter(nodeStorage),
+		m.proxyTransport,
+	)
 
 	serviceStorage := serviceetcd.NewREST(dbClient("services"), storageDecorator)
 	m.serviceRegistry = service.NewRegistry(serviceStorage)
@@ -660,16 +653,16 @@ func (m *Master) init(c *Config) {
 				Version:      expVersion.GroupVersion.Version,
 			},
 		}
-		storageVersion, found := c.StorageVersions[g.Group]
+		storageVersion, found := c.StorageVersions[g.GroupVersion.Group]
 		if !found {
-			glog.Fatalf("Couldn't find storage version of group %v", g.Group)
+			glog.Fatalf("Couldn't find storage version of group %v", g.GroupVersion.Group)
 		}
 		group := unversioned.APIGroup{
-			Name:             g.Group,
+			Name:             g.GroupVersion.Group,
 			Versions:         expAPIVersions,
 			PreferredVersion: unversioned.GroupVersionForDiscovery{GroupVersion: storageVersion, Version: apiutil.GetVersion(storageVersion)},
 		}
-		apiserver.AddGroupWebService(m.handlerContainer, c.APIGroupPrefix+"/"+latest.GroupOrDie("extensions").Group, group)
+		apiserver.AddGroupWebService(m.handlerContainer, c.APIGroupPrefix+"/"+latest.GroupOrDie("extensions").GroupVersion.Group, group)
 		allGroups = append(allGroups, group)
 		apiserver.InstallServiceErrorHandler(m.handlerContainer, m.newRequestInfoResolver(), []string{expVersion.GroupVersion.String()})
 	}
@@ -1008,7 +1001,7 @@ func (m *Master) thirdpartyapi(group, kind, version string) *apiserver.APIGroupV
 		strings.ToLower(kind) + "s": resourceStorage,
 	}
 
-	serverGroupVersion := unversioned.ParseGroupVersionOrDie(latest.GroupOrDie("").GroupVersion)
+	serverGroupVersion := latest.GroupOrDie("").GroupVersion
 
 	return &apiserver.APIGroupVersion{
 		Root:                apiRoot,
@@ -1098,7 +1091,7 @@ func (m *Master) experimental(c *Config) *apiserver.APIGroupVersion {
 	}
 
 	extensionsGroup := latest.GroupOrDie("extensions")
-	serverGroupVersion := unversioned.ParseGroupVersionOrDie(latest.GroupOrDie("").GroupVersion)
+	serverGroupVersion := latest.GroupOrDie("").GroupVersion
 
 	return &apiserver.APIGroupVersion{
 		Root:                m.apiGroupPrefix,
@@ -1112,7 +1105,7 @@ func (m *Master) experimental(c *Config) *apiserver.APIGroupVersion {
 		Codec:              extensionsGroup.Codec,
 		Linker:             extensionsGroup.SelfLinker,
 		Storage:            storage,
-		GroupVersion:       unversioned.ParseGroupVersionOrDie(extensionsGroup.GroupVersion),
+		GroupVersion:       extensionsGroup.GroupVersion,
 		ServerGroupVersion: &serverGroupVersion,
 
 		Admit:   m.admissionControl,

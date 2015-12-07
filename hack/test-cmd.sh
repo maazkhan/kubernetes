@@ -187,6 +187,9 @@ kube::util::wait_for_url "http://127.0.0.1:${API_PORT}/api/v1/nodes/127.0.0.1" "
 # Expose kubectl directly for readability
 PATH="${KUBE_OUTPUT_HOSTBIN}":$PATH
 
+kube::log::status "Checking kubectl version"
+kubectl version
+
 runTests() {
   version="$1"
   echo "Testing api version: $1"
@@ -891,10 +894,13 @@ __EOF__
   kube::test::get_object_assert 'deployment nginx-deployment' "{{$deployment_replicas}}" '1'
   # Clean-up
   kubectl delete deployment/nginx-deployment "${kube_flags[@]}"
+  # TODO: Remove once deployment reaping is implemented
+  kubectl delete rc --all "${kube_flags[@]}"
 
   ### Expose replication controller as service
-  # Pre-condition: 2 replicas
-  kube::test::get_object_assert 'rc frontend' "{{$rc_replicas_field}}" '2'
+  kubectl create -f examples/guestbook/frontend-controller.yaml "${kube_flags[@]}"
+  # Pre-condition: 3 replicas
+  kube::test::get_object_assert 'rc frontend' "{{$rc_replicas_field}}" '3'
   # Command
   kubectl expose rc frontend --port=80 "${kube_flags[@]}"
   # Post-condition: service exists and the port is unnamed

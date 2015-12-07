@@ -104,6 +104,14 @@ func FuzzerFor(t *testing.T, version string, src rand.Source) *fuzz.Fuzzer {
 			field, _ := fields.ParseSelector("a=b")
 			j.FieldSelector = unversioned.FieldSelector{field}
 		},
+		func(j *api.PodExecOptions, c fuzz.Continue) {
+			j.Stdout = true
+			j.Stderr = true
+		},
+		func(j *api.PodAttachOptions, c fuzz.Continue) {
+			j.Stdout = true
+			j.Stderr = true
+		},
 		func(s *api.PodSpec, c fuzz.Continue) {
 			c.FuzzNoCustom(s)
 			// has a default value
@@ -167,8 +175,10 @@ func FuzzerFor(t *testing.T, version string, src rand.Source) *fuzz.Fuzzer {
 			// TODO: uncomment when round trip starts from a versioned object
 			if true { //c.RandBool() {
 				*j = &runtime.Unknown{
-					TypeMeta: runtime.TypeMeta{Kind: "Something", APIVersion: "unknown"},
-					RawJSON:  []byte(`{"apiVersion":"unknown","kind":"Something","someKey":"someValue"}`),
+					// apiVersion has rules now.  Since it includes <group>/<version> and only `v1` can be bare,
+					// then this must choose a valid format to deserialize
+					TypeMeta: runtime.TypeMeta{Kind: "Something", APIVersion: "unknown.group/unknown"},
+					RawJSON:  []byte(`{"apiVersion":"unknown.group/unknown","kind":"Something","someKey":"someValue"}`),
 				}
 			} else {
 				types := []runtime.Object{&api.Pod{}, &api.ReplicationController{}}

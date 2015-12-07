@@ -157,28 +157,28 @@ func (fn ResourcePrinterFunc) HandledResources() []string {
 type VersionedPrinter struct {
 	printer   ResourcePrinter
 	convertor runtime.ObjectConvertor
-	version   []string
+	versions  []unversioned.GroupVersion
 }
 
 // NewVersionedPrinter wraps a printer to convert objects to a known API version prior to printing.
-func NewVersionedPrinter(printer ResourcePrinter, convertor runtime.ObjectConvertor, version ...string) ResourcePrinter {
+func NewVersionedPrinter(printer ResourcePrinter, convertor runtime.ObjectConvertor, versions ...unversioned.GroupVersion) ResourcePrinter {
 	return &VersionedPrinter{
 		printer:   printer,
 		convertor: convertor,
-		version:   version,
+		versions:  versions,
 	}
 }
 
 // PrintObj implements ResourcePrinter
 func (p *VersionedPrinter) PrintObj(obj runtime.Object, w io.Writer) error {
-	if len(p.version) == 0 {
+	if len(p.versions) == 0 {
 		return fmt.Errorf("no version specified, object cannot be converted")
 	}
-	for _, version := range p.version {
-		if len(version) == 0 {
+	for _, version := range p.versions {
+		if version.IsEmpty() {
 			continue
 		}
-		converted, err := p.convertor.ConvertToVersion(obj, version)
+		converted, err := p.convertor.ConvertToVersion(obj, version.String())
 		if conversion.IsNotRegisteredError(err) {
 			continue
 		}
@@ -187,7 +187,7 @@ func (p *VersionedPrinter) PrintObj(obj runtime.Object, w io.Writer) error {
 		}
 		return p.printer.PrintObj(converted, w)
 	}
-	return fmt.Errorf("the object cannot be converted to any of the versions: %v", p.version)
+	return fmt.Errorf("the object cannot be converted to any of the versions: %v", p.versions)
 }
 
 // TODO: implement HandledResources()
@@ -213,7 +213,7 @@ func (p *NamePrinter) PrintObj(obj runtime.Object, w io.Writer) error {
 			for i := 0; i < items.Len(); i++ {
 				rawObj := items.Index(i).FieldByName("RawJSON").Interface().([]byte)
 				scheme := api.Scheme
-				version, kind, err := scheme.DataVersionAndKind(rawObj)
+				groupVersionKind, err := scheme.DataKind(rawObj)
 				if err != nil {
 					return err
 				}
@@ -222,8 +222,8 @@ func (p *NamePrinter) PrintObj(obj runtime.Object, w io.Writer) error {
 					return err
 				}
 				tpmeta := unversioned.TypeMeta{
-					APIVersion: version,
-					Kind:       kind,
+					APIVersion: groupVersionKind.GroupVersion().String(),
+					Kind:       groupVersionKind.Kind,
 				}
 				s := reflect.ValueOf(decodedObj).Elem()
 				s.FieldByName("TypeMeta").Set(reflect.ValueOf(tpmeta))
@@ -730,7 +730,7 @@ func printJob(job *extensions.Job, w io.Writer, withNamespace bool, wide bool, s
 		}
 	}
 
-	selector, _ := extensions.PodSelectorAsSelector(job.Spec.Selector)
+	selector, _ := extensions.LabelSelectorAsSelector(job.Spec.Selector)
 	_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d",
 		name,
 		firstContainer.Name,
@@ -931,9 +931,9 @@ func printDaemonSet(ds *extensions.DaemonSet, w io.Writer, withNamespace bool, w
 			return err
 		}
 	}
-	selector, err := extensions.PodSelectorAsSelector(ds.Spec.Selector)
+	selector, err := extensions.LabelSelectorAsSelector(ds.Spec.Selector)
 	if err != nil {
-		// this shouldn't happen if PodSelector passed validation
+		// this shouldn't happen if LabelSelector passed validation
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s",

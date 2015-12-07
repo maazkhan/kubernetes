@@ -64,7 +64,7 @@ func TestVersionedPrinter(t *testing.T) {
 			return nil
 		}),
 		api.Scheme,
-		testapi.Default.Version(),
+		*testapi.Default.GroupVersion(),
 	)
 	if err := p.PrintObj(original, nil); err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -422,7 +422,7 @@ func TestTemplateStrings(t *testing.T) {
 		t.Fatalf("tmpl fail: %v", err)
 	}
 
-	printer := NewVersionedPrinter(p, api.Scheme, testapi.Default.Version())
+	printer := NewVersionedPrinter(p, api.Scheme, *testapi.Default.GroupVersion())
 
 	for name, item := range table {
 		buffer := &bytes.Buffer{}
@@ -1217,7 +1217,6 @@ func TestTranslateTimestamp(t *testing.T) {
 		{"5 minutes ago", translateTimestamp(unversioned.Time{Time: time.Now().Add(-3e11)}), "5m"},
 		{"an hour ago", translateTimestamp(unversioned.Time{Time: time.Now().Add(-6e12)}), "1h"},
 		{"2 days ago", translateTimestamp(unversioned.Time{Time: time.Now().AddDate(0, 0, -2)}), "2d"},
-		{"months ago", translateTimestamp(unversioned.Time{Time: time.Now().AddDate(0, -3, 0)}), "92d"},
 		{"10 years ago", translateTimestamp(unversioned.Time{Time: time.Now().AddDate(-10, 0, 0)}), "10y"},
 	}
 	for _, test := range tl {

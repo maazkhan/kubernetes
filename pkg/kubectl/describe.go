@@ -141,11 +141,11 @@ func (d *NamespaceDescriber) Describe(namespace, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resourceQuotaList, err := d.ResourceQuotas(name).List(labels.Everything(), fields.Everything())
+	resourceQuotaList, err := d.ResourceQuotas(name).List(unversioned.ListOptions{})
 	if err != nil {
 		return "", err
 	}
-	limitRangeList, err := d.LimitRanges(name).List(labels.Everything(), fields.Everything())
+	limitRangeList, err := d.LimitRanges(name).List(unversioned.ListOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -422,9 +422,9 @@ func (d *PodDescriber) Describe(namespace, name string) (string, error) {
 	pod, err := pc.Get(name)
 	if err != nil {
 		eventsInterface := d.Events(namespace)
-		events, err2 := eventsInterface.List(
-			labels.Everything(),
-			eventsInterface.GetFieldSelector(&name, &namespace, nil, nil))
+		selector := eventsInterface.GetFieldSelector(&name, &namespace, nil, nil)
+		options := unversioned.ListOptions{FieldSelector: unversioned.FieldSelector{selector}}
+		events, err2 := eventsInterface.List(options)
 		if err2 == nil && len(events.Items) > 0 {
 			return tabbedString(func(out io.Writer) error {
 				fmt.Fprintf(out, "Pod '%v': error '%v', but found events.\n", name, err)
@@ -888,7 +888,7 @@ func describeJob(job *extensions.Job, events *api.EventList) (string, error) {
 		fmt.Fprintf(out, "Name:\t%s\n", job.Name)
 		fmt.Fprintf(out, "Namespace:\t%s\n", job.Namespace)
 		fmt.Fprintf(out, "Image(s):\t%s\n", makeImageList(&job.Spec.Template.Spec))
-		selector, _ := extensions.PodSelectorAsSelector(job.Spec.Selector)
+		selector, _ := extensions.LabelSelectorAsSelector(job.Spec.Selector)
 		fmt.Fprintf(out, "Selector:\t%s\n", selector)
 		fmt.Fprintf(out, "Parallelism:\t%d\n", *job.Spec.Parallelism)
 		fmt.Fprintf(out, "Completions:\t%d\n", *job.Spec.Completions)
@@ -916,7 +916,7 @@ func (d *DaemonSetDescriber) Describe(namespace, name string) (string, error) {
 		return "", err
 	}
 
-	selector, err := extensions.PodSelectorAsSelector(daemon.Spec.Selector)
+	selector, err := extensions.LabelSelectorAsSelector(daemon.Spec.Selector)
 	if err != nil {
 		return "", err
 	}
@@ -938,9 +938,9 @@ func describeDaemonSet(daemon *extensions.DaemonSet, events *api.EventList, runn
 		} else {
 			fmt.Fprintf(out, "Image(s):\t%s\n", "<no template>")
 		}
-		selector, err := extensions.PodSelectorAsSelector(daemon.Spec.Selector)
+		selector, err := extensions.LabelSelectorAsSelector(daemon.Spec.Selector)
 		if err != nil {
-			// this shouldn't happen if PodSelector passed validation
+			// this shouldn't happen if LabelSelector passed validation
 			return err
 		}
 		fmt.Fprintf(out, "Selector:\t%s\n", selector)
@@ -1190,7 +1190,8 @@ func (d *ServiceAccountDescriber) Describe(namespace, name string) (string, erro
 	tokens := []api.Secret{}
 
 	tokenSelector := fields.SelectorFromSet(map[string]string{client.SecretType: string(api.SecretTypeServiceAccountToken)})
-	secrets, err := d.Secrets(namespace).List(labels.Everything(), tokenSelector)
+	options := unversioned.ListOptions{FieldSelector: unversioned.FieldSelector{tokenSelector}}
+	secrets, err := d.Secrets(namespace).List(options)
 	if err == nil {
 		for _, s := range secrets.Items {
 			name, _ := s.Annotations[api.ServiceAccountNameKey]
@@ -1267,7 +1268,7 @@ func (d *NodeDescriber) Describe(namespace, name string) (string, error) {
 	}
 
 	var pods []*api.Pod
-	allPods, err := d.Pods(namespace).List(labels.Everything(), fields.Everything())
+	allPods, err := d.Pods(namespace).List(unversioned.ListOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -1299,7 +1300,7 @@ func describeNode(node *api.Node, pods []*api.Pod, events *api.EventList) (strin
 		fmt.Fprintf(out, "Phase:\t%v\n", node.Status.Phase)
 		if len(node.Status.Conditions) > 0 {
 			fmt.Fprint(out, "Conditions:\n  Type\tStatus\tLastHeartbeatTime\tLastTransitionTime\tReason\tMessage\n")
-			fmt.Fprint(out, "  ────\t──────\t─────────────────\t──────────────────\t──────\t───────\n")
+			fmt.Fprint(out, "  ----\t------\t-----------------\t------------------\t------\t-------\n")
 			for _, c := range node.Status.Conditions {
 				fmt.Fprintf(out, "  %v \t%v \t%s \t%s \t%v \t%v\n",
 					c.Type,
@@ -1402,9 +1403,9 @@ func describeNodeResource(pods []*api.Pod, node *api.Node, out io.Writer) error 
 	nonTerminatedPods := filterTerminatedPods(pods)
 	fmt.Fprintf(out, "Non-terminated Pods:\t(%d in total)\n", len(nonTerminatedPods))
 	fmt.Fprint(out, "  Namespace\tName\t\tCPU Requests\tCPU Limits\tMemory Requests\tMemory Limits\n")
-	fmt.Fprint(out, "  ─────────\t────\t\t────────────\t──────────\t───────────────\t─────────────\n")
+	fmt.Fprint(out, "  ---------\t----\t\t------------\t----------\t---------------\t-------------\n")
 	for _, pod := range nonTerminatedPods {
-		req, limit, err := getSinglePodTotalRequestsAndLimits(pod)
+		req, limit, err := api.PodRequestsAndLimits(pod)
 		if err != nil {
 			return err
 		}
@@ -1419,7 +1420,7 @@ func describeNodeResource(pods []*api.Pod, node *api.Node, out io.Writer) error 
 	}
 
 	fmt.Fprint(out, "Allocated resources:\n  (Total limits may be over 100%, i.e., overcommitted. More info: http://releases.k8s.io/HEAD/docs/user-guide/compute-resources.md)\n  CPU Requests\tCPU Limits\tMemory Requests\tMemory Limits\n")
-	fmt.Fprint(out, "  ────────────\t──────────\t───────────────\t─────────────\n")
+	fmt.Fprint(out, "  ------------\t----------\t---------------\t-------------\n")
 	reqs, limits, err := getPodsTotalRequestsAndLimits(nonTerminatedPods)
 	if err != nil {
 		return err
@@ -1452,7 +1453,7 @@ func filterTerminatedPods(pods []*api.Pod) []*api.Pod {
 func getPodsTotalRequestsAndLimits(pods []*api.Pod) (reqs map[api.ResourceName]resource.Quantity, limits map[api.ResourceName]resource.Quantity, err error) {
 	reqs, limits = map[api.ResourceName]resource.Quantity{}, map[api.ResourceName]resource.Quantity{}
 	for _, pod := range pods {
-		podReqs, podLimits, err := getSinglePodTotalRequestsAndLimits(pod)
+		podReqs, podLimits, err := api.PodRequestsAndLimits(pod)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1474,27 +1475,6 @@ func getPodsTotalRequestsAndLimits(pods []*api.Pod) (reqs map[api.ResourceName]r
 	return
 }
 
-func getSinglePodTotalRequestsAndLimits(pod *api.Pod) (reqs map[api.ResourceName]resource.Quantity, limits map[api.ResourceName]resource.Quantity, err error) {
-	reqs, limits = map[api.ResourceName]resource.Quantity{}, map[api.ResourceName]resource.Quantity{}
-	for _, container := range pod.Spec.Containers {
-		for name, quantity := range container.Resources.Requests {
-			if value, ok := reqs[name]; !ok {
-				reqs[name] = *quantity.Copy()
-			} else if err = value.Add(quantity); err != nil {
-				return nil, nil, err
-			}
-		}
-		for name, quantity := range container.Resources.Limits {
-			if value, ok := limits[name]; !ok {
-				limits[name] = *quantity.Copy()
-			} else if err = value.Add(quantity); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-	return
-}
-
 func DescribeEvents(el *api.EventList, w io.Writer) {
 	if len(el.Items) == 0 {
 		fmt.Fprint(w, "No events.")
@@ -1502,7 +1482,7 @@ func DescribeEvents(el *api.EventList, w io.Writer) {
 	}
 	sort.Sort(SortableEvents(el.Items))
 	fmt.Fprint(w, "Events:\n  FirstSeen\tLastSeen\tCount\tFrom\tSubobjectPath\tType\tReason\tMessage\n")
-	fmt.Fprint(w, "  ─────────\t────────\t─────\t────\t─────────────\t────────\t──────\t───────\n")
+	fmt.Fprint(w, "  ---------\t--------\t-----\t----\t-------------\t--------\t------\t-------\n")
 	for _, e := range el.Items {
 		fmt.Fprintf(w, "  %s\t%s\t%d\t%v\t%v\t%v\t%v\t%v\n",
 			translateTimestamp(e.FirstTimestamp),
@@ -1566,7 +1546,7 @@ func (dd *DeploymentDescriber) Describe(namespace, name string) (string, error) 
 func getDaemonSetsForLabels(c client.DaemonSetInterface, labelsToMatch labels.Labels) ([]extensions.DaemonSet, error) {
 	// Get all daemon sets
 	// TODO: this needs a namespace scope as argument
-	dss, err := c.List(labels.Everything(), fields.Everything())
+	dss, err := c.List(unversioned.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error getting daemon set: %v", err)
 	}
@@ -1574,7 +1554,7 @@ func getDaemonSetsForLabels(c client.DaemonSetInterface, labelsToMatch labels.La
 	// Find the ones that match labelsToMatch.
 	var matchingDaemonSets []extensions.DaemonSet
 	for _, ds := range dss.Items {
-		selector, err := extensions.PodSelectorAsSelector(ds.Spec.Selector)
+		selector, err := extensions.LabelSelectorAsSelector(ds.Spec.Selector)
 		if err != nil {
 			// this should never happen if the DaemonSet passed validation
 			return nil, err
@@ -1593,7 +1573,7 @@ func getDaemonSetsForLabels(c client.DaemonSetInterface, labelsToMatch labels.La
 func getReplicationControllersForLabels(c client.ReplicationControllerInterface, labelsToMatch labels.Labels) ([]api.ReplicationController, error) {
 	// Get all replication controllers.
 	// TODO this needs a namespace scope as argument
-	rcs, err := c.List(labels.Everything(), fields.Everything())
+	rcs, err := c.List(unversioned.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error getting replication controllers: %v", err)
 	}
@@ -1624,7 +1604,8 @@ func printReplicationControllersByLabels(matchingRCs []*api.ReplicationControlle
 }
 
 func getPodStatusForController(c client.PodInterface, selector labels.Selector) (running, waiting, succeeded, failed int, err error) {
-	rcPods, err := c.List(selector, fields.Everything())
+	options := unversioned.ListOptions{LabelSelector: unversioned.LabelSelector{selector}}
+	rcPods, err := c.List(options)
 	if err != nil {
 		return
 	}

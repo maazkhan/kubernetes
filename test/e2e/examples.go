@@ -25,8 +25,8 @@ import (
 	"time"
 
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
-	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
 
 	. "github.com/onsi/ginkgo"
@@ -462,7 +462,9 @@ func prepareResourceWithReplacedString(inputFile, old, new string) string {
 func forEachPod(c *client.Client, ns, selectorKey, selectorValue string, fn func(api.Pod)) {
 	pods := []*api.Pod{}
 	for t := time.Now(); time.Since(t) < podListTimeout; time.Sleep(poll) {
-		podList, err := c.Pods(ns).List(labels.SelectorFromSet(labels.Set(map[string]string{selectorKey: selectorValue})), fields.Everything())
+		selector := labels.SelectorFromSet(labels.Set(map[string]string{selectorKey: selectorValue}))
+		options := unversioned.ListOptions{LabelSelector: unversioned.LabelSelector{selector}}
+		podList, err := c.Pods(ns).List(options)
 		Expect(err).NotTo(HaveOccurred())
 		for _, pod := range podList.Items {
 			if pod.Status.Phase == api.PodPending || pod.Status.Phase == api.PodRunning {

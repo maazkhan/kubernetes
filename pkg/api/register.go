@@ -32,6 +32,11 @@ func Kind(kind string) unversioned.GroupKind {
 	return SchemeGroupVersion.WithKind(kind).GroupKind()
 }
 
+// Resource takes an unqualified resource and returns back a Group qualified GroupResource
+func Resource(resource string) unversioned.GroupResource {
+	return SchemeGroupVersion.WithResource(resource).GroupResource()
+}
+
 func init() {
 	Scheme.AddKnownTypes(SchemeGroupVersion,
 		&Pod{},
@@ -118,7 +123,6 @@ func (*PersistentVolumeList) IsAnAPIObject()      {}
 func (*PersistentVolumeClaim) IsAnAPIObject()     {}
 func (*PersistentVolumeClaimList) IsAnAPIObject() {}
 func (*DeleteOptions) IsAnAPIObject()             {}
-func (*ListOptions) IsAnAPIObject()               {}
 func (*PodAttachOptions) IsAnAPIObject()          {}
 func (*PodLogOptions) IsAnAPIObject()             {}
 func (*PodExecOptions) IsAnAPIObject()            {}

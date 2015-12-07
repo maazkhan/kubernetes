@@ -183,6 +183,11 @@ const (
 	// Status code 409
 	StatusReasonConflict StatusReason = "Conflict"
 
+	// StatusReasonGone means the item is no longer available at the server and no
+	// forwarding address is known.
+	// Status code 410
+	StatusReasonGone StatusReason = "Gone"
+
 	// StatusReasonInvalid means the requested create or update operation cannot be
 	// completed due to invalid data provided as part of the request. The client may
 	// need to alter the request. When set, the client may use the StatusDetails
@@ -306,6 +311,8 @@ func (*APIResourceList) IsAnAPIObject() {}
 
 // APIVersions lists the versions that are available, to allow clients to
 // discover the API at /api, which is the root path of the legacy v1 API.
+//
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 type APIVersions struct {
 	TypeMeta `json:",inline"`
 	// versions are the api versions that are available.

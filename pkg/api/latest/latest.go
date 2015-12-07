@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/registered"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
 )
 
@@ -40,6 +41,12 @@ var (
 	// IsRegistered is a shortcut to allGroups.IsRegistered.
 	IsRegistered = allGroups.IsRegistered
 )
+
+// ExternalVersions is a list of all external versions for this API group in order of
+// most preferred to least preferred
+var ExternalVersions = []unversioned.GroupVersion{
+	{Group: "", Version: "v1"},
+}
 
 // GroupMetaMap is a map between group names and their metadata.
 type GroupMetaMap map[string]*GroupMeta
@@ -97,7 +104,7 @@ func (g GroupMetaMap) AllPreferredGroupVersions() string {
 	}
 	var defaults []string
 	for _, groupMeta := range g {
-		defaults = append(defaults, groupMeta.GroupVersion)
+		defaults = append(defaults, groupMeta.GroupVersion.String())
 	}
 	sort.Strings(defaults)
 	return strings.Join(defaults, ",")
@@ -105,16 +112,8 @@ func (g GroupMetaMap) AllPreferredGroupVersions() string {
 
 // GroupMeta stores the metadata of a group, such as the latest supported version.
 type GroupMeta struct {
-	// GroupVersion represents the current external default version of the group. It
-	// is in the form of "group/version".
-	GroupVersion string
-
-	// Version represents the current external default version of the group.
-	// It equals to the "version" part of GroupVersion.
-	Version string
-
-	// Group represents the name of the group
-	Group string
+	// GroupVersion represents the current external default version of the group.
+	GroupVersion unversioned.GroupVersion
 
 	// Versions is the list of versions that are recognized in code. The order
 	// provided is assumed to be from the oldest to the newest, e.g.,
@@ -125,7 +124,7 @@ type GroupMeta struct {
 
 	// GroupVersions is Group + Versions. This is to avoid string concatenation
 	// in many places.
-	GroupVersions []string
+	GroupVersions []unversioned.GroupVersion
 
 	// Codec is the default codec for serializing output that should use
 	// the latest supported version.  Use this Codec when writing to

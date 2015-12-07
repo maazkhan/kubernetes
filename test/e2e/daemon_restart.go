@@ -26,7 +26,6 @@ import (
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	controllerframework "k8s.io/kubernetes/pkg/controller/framework"
-	"k8s.io/kubernetes/pkg/fields"
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/master/ports"
 	"k8s.io/kubernetes/pkg/runtime"
@@ -171,7 +170,8 @@ func replacePods(pods []*api.Pod, store cache.Store) {
 // getContainerRestarts returns the count of container restarts across all pods matching the given labelSelector,
 // and a list of nodenames across which these containers restarted.
 func getContainerRestarts(c *client.Client, ns string, labelSelector labels.Selector) (int, []string) {
-	pods, err := c.Pods(ns).List(labelSelector, fields.Everything())
+	options := unversioned.ListOptions{LabelSelector: unversioned.LabelSelector{labelSelector}}
+	pods, err := c.Pods(ns).List(options)
 	expectNoError(err)
 	failedContainers := 0
 	containerRestartNodes := sets.NewString()
@@ -221,10 +221,12 @@ var _ = Describe("DaemonRestart", func() {
 		newPods, controller = controllerframework.NewInformer(
 			&cache.ListWatch{
 				ListFunc: func() (runtime.Object, error) {
-					return framework.Client.Pods(ns).List(labelSelector, fields.Everything())
+					options := unversioned.ListOptions{LabelSelector: unversioned.LabelSelector{labelSelector}}
+					return framework.Client.Pods(ns).List(options)
 				},
 				WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-					return framework.Client.Pods(ns).Watch(labelSelector, fields.Everything(), options)
+					options.LabelSelector.Selector = labelSelector
+					return framework.Client.Pods(ns).Watch(options)
 				},
 			},
 			&api.Pod{},

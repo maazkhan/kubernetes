@@ -17,9 +17,6 @@ limitations under the License.
 // Package app makes it easy to create a kubelet server for various contexts.
 package app
 
-// Note: if you change code in this file, you might need to change code in
-// contrib/mesos/pkg/executor/service/.
-
 import (
 	"crypto/tls"
 	"fmt"
@@ -704,7 +701,7 @@ func SimpleKubelet(client *client.Client,
 	osInterface kubecontainer.OSInterface,
 	fileCheckFrequency, httpCheckFrequency, minimumGCAge, nodeStatusUpdateFrequency, syncFrequency time.Duration,
 	maxPods int,
-	containerManager cm.ContainerManager) *KubeletConfig {
+	containerManager cm.ContainerManager, clusterDNS net.IP) *KubeletConfig {
 	imageGCPolicy := kubelet.ImageGCPolicy{
 		HighThresholdPercent: 90,
 		LowThresholdPercent:  80,
@@ -719,6 +716,7 @@ func SimpleKubelet(client *client.Client,
 		CAdvisorInterface:         cadvisorInterface,
 		CgroupRoot:                "",
 		Cloud:                     cloud,
+		ClusterDNS:                clusterDNS,
 		ConfigFile:                configFilePath,
 		ContainerManager:          containerManager,
 		ContainerRuntime:          "docker",

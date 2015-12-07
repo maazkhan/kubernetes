@@ -112,6 +112,7 @@ func newTestKubelet(t *testing.T) *TestKubelet {
 	kubelet.masterServiceNamespace = api.NamespaceDefault
 	kubelet.serviceLister = testServiceLister{}
 	kubelet.nodeLister = testNodeLister{}
+	kubelet.nodeInfo = testNodeInfo{}
 	kubelet.recorder = fakeRecorder
 	if err := kubelet.setupDataDirs(); err != nil {
 		t.Fatalf("can't initialize kubelet data dirs: %v", err)
@@ -1019,8 +1020,8 @@ func TestDNSConfigurationParams(t *testing.T) {
 		}
 	}
 	t.Logf("nameservers %+v", options[1].DNS)
-	if len(options[0].DNS) != len(options[1].DNS)+1 {
-		t.Errorf("expected prepend of cluster nameserver, got %+v", options[0].DNS)
+	if len(options[0].DNS) != 1 {
+		t.Errorf("expected cluster nameserver only, got %+v", options[0].DNS)
 	} else if options[0].DNS[0] != clusterNS {
 		t.Errorf("expected nameserver %s, got %v", clusterNS, options[0].DNS[0])
 	}
@@ -1045,7 +1046,11 @@ type testNodeLister struct {
 	nodes []api.Node
 }
 
-func (ls testNodeLister) GetNodeInfo(id string) (*api.Node, error) {
+type testNodeInfo struct {
+	nodes []api.Node
+}
+
+func (ls testNodeInfo) GetNodeInfo(id string) (*api.Node, error) {
 	for _, node := range ls.nodes {
 		if node.Name == id {
 			return &node, nil
@@ -1904,119 +1909,6 @@ func TestPodPhaseWithRestartOnFailure(t *testing.T) {
 	}
 }
 
-func getReadyStatus(cName string) api.ContainerStatus {
-	return api.ContainerStatus{
-		Name:  cName,
-		Ready: true,
-	}
-}
-func getNotReadyStatus(cName string) api.ContainerStatus {
-	return api.ContainerStatus{
-		Name:  cName,
-		Ready: false,
-	}
-}
-func getReadyCondition(status api.ConditionStatus, reason, message string) []api.PodCondition {
-	return []api.PodCondition{{
-		Type:    api.PodReady,
-		Status:  status,
-		Reason:  reason,
-		Message: message,
-	}}
-}
-
-func TestGetPodReadyCondition(t *testing.T) {
-	tests := []struct {
-		spec              *api.PodSpec
-		containerStatuses []api.ContainerStatus
-		podPhase          api.PodPhase
-		expected          []api.PodCondition
-	}{
-		{
-			spec:              nil,
-			containerStatuses: nil,
-			podPhase:          api.PodRunning,
-			expected:          getReadyCondition(api.ConditionFalse, "UnknownContainerStatuses", ""),
-		},
-		{
-			spec:              &api.PodSpec{},
-			containerStatuses: []api.ContainerStatus{},
-			podPhase:          api.PodRunning,
-			expected:          getReadyCondition(api.ConditionTrue, "", ""),
-		},
-		{
-			spec: &api.PodSpec{
-				Containers: []api.Container{
-					{Name: "1234"},
-				},
-			},
-			containerStatuses: []api.ContainerStatus{},
-			podPhase:          api.PodRunning,
-			expected:          getReadyCondition(api.ConditionFalse, "ContainersNotReady", "containers with unknown status: [1234]"),
-		},
-		{
-			spec: &api.PodSpec{
-				Containers: []api.Container{
-					{Name: "1234"},
-					{Name: "5678"},
-				},
-			},
-			containerStatuses: []api.ContainerStatus{
-				getReadyStatus("1234"),
-				getReadyStatus("5678"),
-			},
-			podPhase: api.PodRunning,
-			expected: getReadyCondition(api.ConditionTrue, "", ""),
-		},
-		{
-			spec: &api.PodSpec{
-				Containers: []api.Container{
-					{Name: "1234"},
-					{Name: "5678"},
-				},
-			},
-			containerStatuses: []api.ContainerStatus{
-				getReadyStatus("1234"),
-			},
-			podPhase: api.PodRunning,
-			expected: getReadyCondition(api.ConditionFalse, "ContainersNotReady", "containers with unknown status: [5678]"),
-		},
-		{
-			spec: &api.PodSpec{
-				Containers: []api.Container{
-					{Name: "1234"},
-					{Name: "5678"},
-				},
-			},
-			containerStatuses: []api.ContainerStatus{
-				getReadyStatus("1234"),
-				getNotReadyStatus("5678"),
-			},
-			podPhase: api.PodRunning,
-			expected: getReadyCondition(api.ConditionFalse, "ContainersNotReady", "containers with unready status: [5678]"),
-		},
-		{
-			spec: &api.PodSpec{
-				Containers: []api.Container{
-					{Name: "1234"},
-				},
-			},
-			containerStatuses: []api.ContainerStatus{
-				getNotReadyStatus("1234"),
-			},
-			podPhase: api.PodSucceeded,
-			expected: getReadyCondition(api.ConditionFalse, "PodCompleted", ""),
-		},
-	}
-
-	for i, test := range tests {
-		condition := getPodReadyCondition(test.spec, test.containerStatuses, test.podPhase)
-		if !reflect.DeepEqual(condition, test.expected) {
-			t.Errorf("On test case %v, expected:\n%+v\ngot\n%+v\n", i, test.expected, condition)
-		}
-	}
-}
-
 func TestExecInContainerNoSuchPod(t *testing.T) {
 	testKubelet := newTestKubelet(t)
 	kubelet := testKubelet.kubelet
@@ -2317,6 +2209,9 @@ func TestHandleNodeSelector(t *testing.T) {
 	testKubelet := newTestKubelet(t)
 	kl := testKubelet.kubelet
 	kl.nodeLister = testNodeLister{nodes: []api.Node{
+		{ObjectMeta: api.ObjectMeta{Name: testKubeletHostname, Labels: map[string]string{"key": "B"}}},
+	}}
+	kl.nodeInfo = testNodeInfo{nodes: []api.Node{
 		{ObjectMeta: api.ObjectMeta{Name: testKubeletHostname, Labels: map[string]string{"key": "B"}}},
 	}}
 	testKubelet.fakeCadvisor.On("MachineInfo").Return(&cadvisorapi.MachineInfo{}, nil)
@@ -4018,7 +3913,7 @@ func TestCleanupBandwidthLimits(t *testing.T) {
 			},
 			inputCIDRs:       []string{"1.2.3.4/32", "2.3.4.5/32", "5.6.7.8/32"},
 			expectResetCIDRs: []string{"2.3.4.5/32", "5.6.7.8/32"},
-			expectedCalls:    []string{"GetPodStatus"},
+			expectedCalls:    []string{"GetAPIPodStatus"},
 			name:             "pod running",
 		},
 		{
@@ -4069,7 +3964,7 @@ func TestCleanupBandwidthLimits(t *testing.T) {
 			},
 			inputCIDRs:       []string{"1.2.3.4/32", "2.3.4.5/32", "5.6.7.8/32"},
 			expectResetCIDRs: []string{"1.2.3.4/32", "2.3.4.5/32", "5.6.7.8/32"},
-			expectedCalls:    []string{"GetPodStatus"},
+			expectedCalls:    []string{"GetAPIPodStatus"},
 			name:             "pod not running",
 		},
 		{
@@ -4127,7 +4022,7 @@ func TestCleanupBandwidthLimits(t *testing.T) {
 
 		testKube := newTestKubelet(t)
 		testKube.kubelet.shaper = shaper
-		testKube.fakeRuntime.PodStatus = *test.status
+		testKube.fakeRuntime.APIPodStatus = *test.status
 
 		if test.cacheStatus {
 			for _, pod := range test.pods {

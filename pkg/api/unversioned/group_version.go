@@ -22,8 +22,41 @@ import (
 	"strings"
 )
 
+// GroupResource specifies a Group and a Resource, but does not force a version.  This is useful for identifying
+// concepts during lookup stages without having partially valid types
+type GroupResource struct {
+	Group    string
+	Resource string
+}
+
+func (gr *GroupResource) String() string {
+	return strings.Join([]string{gr.Group, ", Resource=", gr.Resource}, "")
+}
+
+// GroupVersionResource unambiguously identifies a resource.  It doesn't anonymously include GroupVersion
+// to avoid automatic coersion.  It doesn't use a GroupVersion to avoid custom marshalling
+type GroupVersionResource struct {
+	Group    string
+	Version  string
+	Resource string
+}
+
+func (gvr GroupVersionResource) GroupResource() GroupResource {
+	return GroupResource{Group: gvr.Group, Resource: gvr.Resource}
+}
+
+func (gvr GroupVersionResource) GroupVersion() GroupVersion {
+	return GroupVersion{Group: gvr.Group, Version: gvr.Version}
+}
+
+func (gvr *GroupVersionResource) String() string {
+	return strings.Join([]string{gvr.Group, "/", gvr.Version, ", Resource=", gvr.Resource}, "")
+}
+
 // GroupKind specifies a Group and a Kind, but does not force a version.  This is useful for identifying
 // concepts during lookup stages without having partially valid types
+//
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 type GroupKind struct {
 	Group string
 	Kind  string
@@ -39,15 +72,17 @@ func (gk *GroupKind) String() string {
 
 // GroupVersionKind unambiguously identifies a kind.  It doesn't anonymously include GroupVersion
 // to avoid automatic coersion.  It doesn't use a GroupVersion to avoid custom marshalling
+//
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 type GroupVersionKind struct {
 	Group   string
 	Version string
 	Kind    string
 }
 
-// TODO remove this
-func NewGroupVersionKind(gv GroupVersion, kind string) GroupVersionKind {
-	return GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: kind}
+// IsEmpty returns true if group, version, and kind are empty
+func (gvk GroupVersionKind) IsEmpty() bool {
+	return len(gvk.Group) == 0 && len(gvk.Version) == 0 && len(gvk.Kind) == 0
 }
 
 func (gvk GroupVersionKind) GroupKind() GroupKind {
@@ -58,11 +93,13 @@ func (gvk GroupVersionKind) GroupVersion() GroupVersion {
 	return GroupVersion{Group: gvk.Group, Version: gvk.Version}
 }
 
-func (gvk *GroupVersionKind) String() string {
+func (gvk GroupVersionKind) String() string {
 	return gvk.Group + "/" + gvk.Version + ", Kind=" + gvk.Kind
 }
 
 // GroupVersion contains the "group" and the "version", which uniquely identifies the API.
+//
+// +protobuf.options.(gogoproto.goproto_stringer)=false
 type GroupVersion struct {
 	Group   string
 	Version string
@@ -123,6 +160,11 @@ func ParseGroupVersionOrDie(gv string) GroupVersion {
 // WithKind creates a GroupVersionKind based on the method receiver's GroupVersion and the passed Kind.
 func (gv GroupVersion) WithKind(kind string) GroupVersionKind {
 	return GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: kind}
+}
+
+// WithResource creates a GroupVersionResource based on the method receiver's GroupVersion and the passed Resource.
+func (gv GroupVersion) WithResource(resource string) GroupVersionResource {
+	return GroupVersionResource{Group: gv.Group, Version: gv.Version, Resource: resource}
 }
 
 // MarshalJSON implements the json.Marshaller interface.

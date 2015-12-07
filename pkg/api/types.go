@@ -19,8 +19,6 @@ package api
 import (
 	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/api/unversioned"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util/intstr"
@@ -504,7 +502,12 @@ type GitRepoVolumeSource struct {
 	// Repository URL
 	Repository string `json:"repository"`
 	// Commit hash, this is optional
-	Revision string `json:"revision"`
+	Revision string `json:"revision,omitempty"`
+	// Clone target, this is optional
+	// Must not contain or start with '..'.  If '.' is supplied, the volume directory will be the
+	// git repository.  Otherwise, if specified, the volume will contain the git repository in
+	// the subdirectory with the given name.
+	Directory string `json:"directory,omitempty"`
 	// TODO: Consider credentials here.
 }
 
@@ -1640,23 +1643,6 @@ type DeleteOptions struct {
 	// The value zero indicates delete immediately. If this value is nil, the default grace period for the
 	// specified type will be used.
 	GracePeriodSeconds *int64 `json:"gracePeriodSeconds"`
-}
-
-// ListOptions is the query options to a standard REST list call, and has future support for
-// watch calls.
-type ListOptions struct {
-	unversioned.TypeMeta `json:",inline"`
-
-	// A selector based on labels
-	LabelSelector labels.Selector
-	// A selector based on fields
-	FieldSelector fields.Selector
-	// If true, watch for changes to this list
-	Watch bool
-	// The resource version to watch (no effect on list yet)
-	ResourceVersion string
-	// Timeout for the list/watch call.
-	TimeoutSeconds *int64
 }
 
 // PodLogOptions is the query options for a Pod's logs REST call

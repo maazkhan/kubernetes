@@ -222,8 +222,8 @@ function provision-master() {
   local master_ip=${MASTER#*@}
   ensure-setup-dir ${MASTER}
 
-  # scp -r ${SSH_OPTS} master config-default.sh copy-files.sh util.sh "${MASTER}:${KUBE_TEMP}" 
-  kube-scp ${MASTER} "${ROOT}/../saltbase/salt/generate-cert/make-ca-cert.sh ${ROOT}/binaries/master ${ROOT}/master ${ROOT}/config-default.sh ${ROOT}/util.sh" "${KUBE_TEMP}" 
+  # scp -r ${SSH_OPTS} master config-default.sh copy-files.sh util.sh "${MASTER}:${KUBE_TEMP}"
+  kube-scp ${MASTER} "${ROOT}/../saltbase/salt/generate-cert/make-ca-cert.sh ${ROOT}/binaries/master ${ROOT}/master ${ROOT}/config-default.sh ${ROOT}/util.sh" "${KUBE_TEMP}"
   kube-ssh "${MASTER}" " \
     sudo cp -r ${KUBE_TEMP}/master/bin /opt/kubernetes; \
     sudo chmod -R +x /opt/kubernetes/bin; \
@@ -293,7 +293,7 @@ function kube-scp() {
 #   KUBE_USER
 #   KUBE_PASSWORD
 function get-password {
-  get-kubeconfig-basicauth
+  load-or-gen-kube-basicauth
   if [[ -z "${KUBE_USER}" || -z "${KUBE_PASSWORD}" ]]; then
     KUBE_USER=admin
     KUBE_PASSWORD=$(python -c 'import string,random; \

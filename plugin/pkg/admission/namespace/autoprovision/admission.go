@@ -26,8 +26,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 )
@@ -48,7 +46,7 @@ type provision struct {
 }
 
 func (p *provision) Admit(a admission.Attributes) (err error) {
-	gvk, err := api.RESTMapper.KindFor(a.GetResource())
+	gvk, err := api.RESTMapper.KindFor(a.GetResource().Resource)
 	if err != nil {
 		return admission.NewForbidden(a, err)
 	}
@@ -86,10 +84,10 @@ func NewProvision(c client.Interface) admission.Interface {
 	reflector := cache.NewReflector(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return c.Namespaces().List(labels.Everything(), fields.Everything())
+				return c.Namespaces().List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return c.Namespaces().Watch(labels.Everything(), fields.Everything(), options)
+				return c.Namespaces().Watch(options)
 			},
 		},
 		&api.Namespace{},

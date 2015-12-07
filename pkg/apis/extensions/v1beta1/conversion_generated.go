@@ -397,6 +397,7 @@ func autoconvert_api_GitRepoVolumeSource_To_v1_GitRepoVolumeSource(in *api.GitRe
 	}
 	out.Repository = in.Repository
 	out.Revision = in.Revision
+	out.Directory = in.Directory
 	return nil
 }
 
@@ -1456,6 +1457,7 @@ func autoconvert_v1_GitRepoVolumeSource_To_api_GitRepoVolumeSource(in *v1.GitRep
 	}
 	out.Repository = in.Repository
 	out.Revision = in.Revision
+	out.Directory = in.Directory
 	return nil
 }
 
@@ -2300,8 +2302,8 @@ func autoconvert_extensions_DaemonSetSpec_To_v1beta1_DaemonSetSpec(in *extension
 		defaulting.(func(*extensions.DaemonSetSpec))(in)
 	}
 	if in.Selector != nil {
-		out.Selector = new(PodSelector)
-		if err := convert_extensions_PodSelector_To_v1beta1_PodSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(LabelSelector)
+		if err := convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -2819,8 +2821,8 @@ func autoconvert_extensions_JobSpec_To_v1beta1_JobSpec(in *extensions.JobSpec, o
 		out.Completions = nil
 	}
 	if in.Selector != nil {
-		out.Selector = new(PodSelector)
-		if err := convert_extensions_PodSelector_To_v1beta1_PodSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(LabelSelector)
+		if err := convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -2874,22 +2876,9 @@ func convert_extensions_JobStatus_To_v1beta1_JobStatus(in *extensions.JobStatus,
 	return autoconvert_extensions_JobStatus_To_v1beta1_JobStatus(in, out, s)
 }
 
-func autoconvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
+func autoconvert_extensions_LabelSelector_To_v1beta1_LabelSelector(in *extensions.LabelSelector, out *LabelSelector, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.NodeUtilization))(in)
-	}
-	out.Resource = NodeResource(in.Resource)
-	out.Value = in.Value
-	return nil
-}
-
-func convert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
-	return autoconvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in, out, s)
-}
-
-func autoconvert_extensions_PodSelector_To_v1beta1_PodSelector(in *extensions.PodSelector, out *PodSelector, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.PodSelector))(in)
+		defaulting.(func(*extensions.LabelSelector))(in)
 	}
 	if in.MatchLabels != nil {
 		out.MatchLabels = make(map[string]string)
@@ -2900,9 +2889,9 @@ func autoconvert_extensions_PodSelector_To_v1beta1_PodSelector(in *extensions.Po
 		out.MatchLabels = nil
 	}
 	if in.MatchExpressions != nil {
-		out.MatchExpressions = make([]PodSelectorRequirement, len(in.MatchExpressions))
+		out.MatchExpressions = make([]LabelSelectorRequirement, len(in.MatchExpressions))
 		for i := range in.MatchExpressions {
-			if err := convert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
+			if err := convert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
 				return err
 			}
 		}
@@ -2912,16 +2901,16 @@ func autoconvert_extensions_PodSelector_To_v1beta1_PodSelector(in *extensions.Po
 	return nil
 }
 
-func convert_extensions_PodSelector_To_v1beta1_PodSelector(in *extensions.PodSelector, out *PodSelector, s conversion.Scope) error {
-	return autoconvert_extensions_PodSelector_To_v1beta1_PodSelector(in, out, s)
+func convert_extensions_LabelSelector_To_v1beta1_LabelSelector(in *extensions.LabelSelector, out *LabelSelector, s conversion.Scope) error {
+	return autoconvert_extensions_LabelSelector_To_v1beta1_LabelSelector(in, out, s)
 }
 
-func autoconvert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequirement(in *extensions.PodSelectorRequirement, out *PodSelectorRequirement, s conversion.Scope) error {
+func autoconvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *extensions.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*extensions.PodSelectorRequirement))(in)
+		defaulting.(func(*extensions.LabelSelectorRequirement))(in)
 	}
 	out.Key = in.Key
-	out.Operator = PodSelectorOperator(in.Operator)
+	out.Operator = LabelSelectorOperator(in.Operator)
 	if in.Values != nil {
 		out.Values = make([]string, len(in.Values))
 		for i := range in.Values {
@@ -2933,8 +2922,21 @@ func autoconvert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequire
 	return nil
 }
 
-func convert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequirement(in *extensions.PodSelectorRequirement, out *PodSelectorRequirement, s conversion.Scope) error {
-	return autoconvert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequirement(in, out, s)
+func convert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in *extensions.LabelSelectorRequirement, out *LabelSelectorRequirement, s conversion.Scope) error {
+	return autoconvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement(in, out, s)
+}
+
+func autoconvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*extensions.NodeUtilization))(in)
+	}
+	out.Resource = NodeResource(in.Resource)
+	out.Value = in.Value
+	return nil
+}
+
+func convert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in *extensions.NodeUtilization, out *NodeUtilization, s conversion.Scope) error {
+	return autoconvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization(in, out, s)
 }
 
 func autoconvert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControllerDummy(in *extensions.ReplicationControllerDummy, out *ReplicationControllerDummy, s conversion.Scope) error {
@@ -3287,8 +3289,8 @@ func autoconvert_v1beta1_DaemonSetSpec_To_extensions_DaemonSetSpec(in *DaemonSet
 		defaulting.(func(*DaemonSetSpec))(in)
 	}
 	if in.Selector != nil {
-		out.Selector = new(extensions.PodSelector)
-		if err := convert_v1beta1_PodSelector_To_extensions_PodSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(extensions.LabelSelector)
+		if err := convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -3786,8 +3788,8 @@ func autoconvert_v1beta1_JobSpec_To_extensions_JobSpec(in *JobSpec, out *extensi
 		out.Completions = nil
 	}
 	if in.Selector != nil {
-		out.Selector = new(extensions.PodSelector)
-		if err := convert_v1beta1_PodSelector_To_extensions_PodSelector(in.Selector, out.Selector, s); err != nil {
+		out.Selector = new(extensions.LabelSelector)
+		if err := convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in.Selector, out.Selector, s); err != nil {
 			return err
 		}
 	} else {
@@ -3841,22 +3843,9 @@ func convert_v1beta1_JobStatus_To_extensions_JobStatus(in *JobStatus, out *exten
 	return autoconvert_v1beta1_JobStatus_To_extensions_JobStatus(in, out, s)
 }
 
-func autoconvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in *NodeUtilization, out *extensions.NodeUtilization, s conversion.Scope) error {
+func autoconvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSelector, out *extensions.LabelSelector, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*NodeUtilization))(in)
-	}
-	out.Resource = extensions.NodeResource(in.Resource)
-	out.Value = in.Value
-	return nil
-}
-
-func convert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in *NodeUtilization, out *extensions.NodeUtilization, s conversion.Scope) error {
-	return autoconvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in, out, s)
-}
-
-func autoconvert_v1beta1_PodSelector_To_extensions_PodSelector(in *PodSelector, out *extensions.PodSelector, s conversion.Scope) error {
-	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*PodSelector))(in)
+		defaulting.(func(*LabelSelector))(in)
 	}
 	if in.MatchLabels != nil {
 		out.MatchLabels = make(map[string]string)
@@ -3867,9 +3856,9 @@ func autoconvert_v1beta1_PodSelector_To_extensions_PodSelector(in *PodSelector, 
 		out.MatchLabels = nil
 	}
 	if in.MatchExpressions != nil {
-		out.MatchExpressions = make([]extensions.PodSelectorRequirement, len(in.MatchExpressions))
+		out.MatchExpressions = make([]extensions.LabelSelectorRequirement, len(in.MatchExpressions))
 		for i := range in.MatchExpressions {
-			if err := convert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
+			if err := convert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(&in.MatchExpressions[i], &out.MatchExpressions[i], s); err != nil {
 				return err
 			}
 		}
@@ -3879,16 +3868,16 @@ func autoconvert_v1beta1_PodSelector_To_extensions_PodSelector(in *PodSelector, 
 	return nil
 }
 
-func convert_v1beta1_PodSelector_To_extensions_PodSelector(in *PodSelector, out *extensions.PodSelector, s conversion.Scope) error {
-	return autoconvert_v1beta1_PodSelector_To_extensions_PodSelector(in, out, s)
+func convert_v1beta1_LabelSelector_To_extensions_LabelSelector(in *LabelSelector, out *extensions.LabelSelector, s conversion.Scope) error {
+	return autoconvert_v1beta1_LabelSelector_To_extensions_LabelSelector(in, out, s)
 }
 
-func autoconvert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequirement(in *PodSelectorRequirement, out *extensions.PodSelectorRequirement, s conversion.Scope) error {
+func autoconvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in *LabelSelectorRequirement, out *extensions.LabelSelectorRequirement, s conversion.Scope) error {
 	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
-		defaulting.(func(*PodSelectorRequirement))(in)
+		defaulting.(func(*LabelSelectorRequirement))(in)
 	}
 	out.Key = in.Key
-	out.Operator = extensions.PodSelectorOperator(in.Operator)
+	out.Operator = extensions.LabelSelectorOperator(in.Operator)
 	if in.Values != nil {
 		out.Values = make([]string, len(in.Values))
 		for i := range in.Values {
@@ -3900,8 +3889,21 @@ func autoconvert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequire
 	return nil
 }
 
-func convert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequirement(in *PodSelectorRequirement, out *extensions.PodSelectorRequirement, s conversion.Scope) error {
-	return autoconvert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequirement(in, out, s)
+func convert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in *LabelSelectorRequirement, out *extensions.LabelSelectorRequirement, s conversion.Scope) error {
+	return autoconvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement(in, out, s)
+}
+
+func autoconvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in *NodeUtilization, out *extensions.NodeUtilization, s conversion.Scope) error {
+	if defaulting, found := s.DefaultingInterface(reflect.TypeOf(*in)); found {
+		defaulting.(func(*NodeUtilization))(in)
+	}
+	out.Resource = extensions.NodeResource(in.Resource)
+	out.Value = in.Value
+	return nil
+}
+
+func convert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in *NodeUtilization, out *extensions.NodeUtilization, s conversion.Scope) error {
+	return autoconvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization(in, out, s)
 }
 
 func autoconvert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControllerDummy(in *ReplicationControllerDummy, out *extensions.ReplicationControllerDummy, s conversion.Scope) error {
@@ -4175,9 +4177,9 @@ func init() {
 		autoconvert_extensions_JobSpec_To_v1beta1_JobSpec,
 		autoconvert_extensions_JobStatus_To_v1beta1_JobStatus,
 		autoconvert_extensions_Job_To_v1beta1_Job,
+		autoconvert_extensions_LabelSelectorRequirement_To_v1beta1_LabelSelectorRequirement,
+		autoconvert_extensions_LabelSelector_To_v1beta1_LabelSelector,
 		autoconvert_extensions_NodeUtilization_To_v1beta1_NodeUtilization,
-		autoconvert_extensions_PodSelectorRequirement_To_v1beta1_PodSelectorRequirement,
-		autoconvert_extensions_PodSelector_To_v1beta1_PodSelector,
 		autoconvert_extensions_ReplicationControllerDummy_To_v1beta1_ReplicationControllerDummy,
 		autoconvert_extensions_RollingUpdateDeployment_To_v1beta1_RollingUpdateDeployment,
 		autoconvert_extensions_ScaleSpec_To_v1beta1_ScaleSpec,
@@ -4260,9 +4262,9 @@ func init() {
 		autoconvert_v1beta1_JobSpec_To_extensions_JobSpec,
 		autoconvert_v1beta1_JobStatus_To_extensions_JobStatus,
 		autoconvert_v1beta1_Job_To_extensions_Job,
+		autoconvert_v1beta1_LabelSelectorRequirement_To_extensions_LabelSelectorRequirement,
+		autoconvert_v1beta1_LabelSelector_To_extensions_LabelSelector,
 		autoconvert_v1beta1_NodeUtilization_To_extensions_NodeUtilization,
-		autoconvert_v1beta1_PodSelectorRequirement_To_extensions_PodSelectorRequirement,
-		autoconvert_v1beta1_PodSelector_To_extensions_PodSelector,
 		autoconvert_v1beta1_ReplicationControllerDummy_To_extensions_ReplicationControllerDummy,
 		autoconvert_v1beta1_RollingUpdateDeployment_To_extensions_RollingUpdateDeployment,
 		autoconvert_v1beta1_ScaleSpec_To_extensions_ScaleSpec,

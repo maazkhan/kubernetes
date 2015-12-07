@@ -28,8 +28,6 @@ import (
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
-	"k8s.io/kubernetes/pkg/fields"
-	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/watch"
@@ -53,11 +51,11 @@ type lifecycle struct {
 func (l *lifecycle) Admit(a admission.Attributes) (err error) {
 
 	// prevent deletion of immortal namespaces
-	if a.GetOperation() == admission.Delete && a.GetKind() == "Namespace" && l.immortalNamespaces.Has(a.GetName()) {
-		return errors.NewForbidden(a.GetKind(), a.GetName(), fmt.Errorf("this namespace may not be deleted"))
+	if a.GetOperation() == admission.Delete && a.GetKind() == api.Kind("Namespace") && l.immortalNamespaces.Has(a.GetName()) {
+		return errors.NewForbidden(a.GetKind().Kind, a.GetName(), fmt.Errorf("this namespace may not be deleted"))
 	}
 
-	gvk, err := api.RESTMapper.KindFor(a.GetResource())
+	gvk, err := api.RESTMapper.KindFor(a.GetResource().Resource)
 	if err != nil {
 		return errors.NewInternalError(err)
 	}
@@ -110,10 +108,10 @@ func NewLifecycle(c client.Interface) admission.Interface {
 	reflector := cache.NewReflector(
 		&cache.ListWatch{
 			ListFunc: func() (runtime.Object, error) {
-				return c.Namespaces().List(labels.Everything(), fields.Everything())
+				return c.Namespaces().List(unversioned.ListOptions{})
 			},
 			WatchFunc: func(options unversioned.ListOptions) (watch.Interface, error) {
-				return c.Namespaces().Watch(labels.Everything(), fields.Everything(), options)
+				return c.Namespaces().Watch(options)
 			},
 		},
 		&api.Namespace{},
