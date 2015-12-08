@@ -76,11 +76,12 @@ func createCommandInternal(f *cmdutil.Factory, cmdOut io.Writer, cmd *cobra.Comm
 		return err
 	}
 	mapper, typer := f.Object()
-	version, kind, err := typer.ObjectVersionAndKind(obj)
+	groupVersionKind, err := typer.ObjectKind(obj)
 	if err != nil {
 		return err
 	}
-	mapping, err := mapper.RESTMapping(kind, version)
+
+	mapping, err := mapper.RESTMapping(groupVersionKind.GroupKind(), groupVersionKind.Version)
 	if err != nil {
 		return err
 	}
